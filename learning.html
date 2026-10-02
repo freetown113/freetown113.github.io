@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="The environment, imitation-learning step, PPO configuration, and curriculum behind the learned controller.">
+    <meta name="theme-color" content="#101110">
+    <title>RL training — ADCS project</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <script src="site-config.js" defer></script>
+    <script src="script.js" defer></script>
+</head>
+
+<body><a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+        <header class="site-header"><a class="wordmark" href="index.html"><span class="mark" aria-hidden="true">✳</span> ADCS <span class="wordmark-note">/ ISAM</span></a>
+            <nav aria-label="Main navigation"><a href="technical.html">Project</a><a href="scenarios.html">Scenarios</a><a href="results.html">Results</a><a data-repo="" hidden="hidden">Code ↗</a></nav>
+        </header>
+        <main id="main" class="technical">
+            <header class="note-header">
+                <p class="eyebrow">AUTONOMY / ML perspective</p>
+                <h1>Train RL agent: <em>direct motors control</em></h1>
+                <p class="lead">This section describes satellite's environment, RL algorithm details, training strategy: imitation learning, curriculum learning.</p>
+            </header>
+            <nav class="topic-nav" aria-label="Technical perspectives"><a href="technical.html">Project &amp; evolution</a><a href="gnc.html">GNC &amp; control</a><a href="fdir.html">Fault management</a><a href="learning.html" aria-current="page">RL training</a></nav>
+            <section class="note-section" id="task" aria-labelledby="task-title">
+                <div class="note-margin"><span class="section-number">01</span><span>ENVIRONMENT</span></div>
+                <div class="note-body">
+                    <h2 id="task-title">Learn actuator decisions inside a GNC loop</h2>
+                    <p>The agent controls the orientation of a rigid body through four reaction wheels. Guidance abstraction provides a target attitude and angular rate. A state estimator and fault-management path supply the controller’s belief about body's position and attitude.
+                        An RL agent learns to turn that information into motor commands.</p>
+                    <p>The simulator is implemented in phases, each time another abstraction is added: base satellite physics; envoronment vectorization; wheels faulure modes; sensors measurements replace ground truth from physics; signal/device degradation
+                        or complete loss; supervisor modes; mission scenarios; orbital configuration. The physics at 100 Hz, sensors measurements at range from 80 to 100Hz, executes control at 20 Hz, with 512 parallel environments configured for training
+                        and evaluation. This describes batching, not a measured throughput result.</p>
+                    <p>Partial observability is deliberate: delayed measurements, estimated gyro bias, and inferred actuator authority replace direct access to the simulator’s state. The current agent is feedforward. Previous actions and explicit estimates
+                        provide context; there is no recurrent memory in the published network shape.</p>
+                    <div class="table-wrap">
+                        <table>
+                            <caption>B3 observation: 18 inputs</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Input</th>
+                                    <th scope="col">Size</th>
+                                    <th scope="col">Purpose</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Attitude-error vector</th>
+                                    <td>3</td>
+                                    <td>Estimated orientation relative to the reference</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Tracking-rate error</th>
+                                    <td>3</td>
+                                    <td>Angular-rate mismatch</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Wheel tachometers</th>
+                                    <td>4</td>
+                                    <td>Actuator speed state</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Previous normalized actions</th>
+                                    <td>4</td>
+                                    <td>Recent command context</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Estimated wheel authority</th>
+                                    <td>4</td>
+                                    <td>Telemetry-derived actuator health</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Estimator's confidence</th>
+                                    <td>1</td>
+                                    <td>Estimator belief in own corectness</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Supervisory mode</th>
+                                    <td>6</td>
+                                    <td>One hot supervisory state</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>The four outputs are normalized wheel-motor commands. Actuator conditioning converts them into bounded commands. Current control limit is 0.03 N·m. Mode and diagnostic-confidence features are not enabled in this observation configuration.</p>
+                    <p
+                    class="code-reference" data-code="environment"><span>Code · observations, actions and environment <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="teacher" aria-labelledby="teacher-title">
+                <div class="note-margin"><span class="section-number">02</span><span>TRAINING HISTORY</span></div>
+                <div class="note-body">
+                    <h2 id="teacher-title">Imitation learning: PD controller as a teacher</h2>
+                    <p>Along the training process it was gradually shifted what the algorithm was responsible for controlling. Fundamentally changing the action space of the neural network across three distinct phases. The early sequence began with <strong>residual PD</strong>: learn a small correction above PD controller. It then moved to direct body-torque, where an agent had to calculate the total rotational force needed along the three physical axes of the satellite's body. Ultimately direct wheel-motor control, where an agent directly commanding the individual voltages/currents of the four physical reaction wheel motors. These are changes in action space and responsibility.</p>
+                    <p>A useful practical step was supervised initialization from the PD teacher. RL algorithms training from scratch struggles at the very beginning because an untrained NN takes completely random actions, leading to crashes and slow learning.An imitation learning helps to bypass this problem. Data were collected from trajectories of untrained, partly trained, and trained residual policies, then paired with teacher actions. The policy mean was passed through tanh and fitted using mean-squared error to those actions. This gave the Actor-Critic network a solid baseline behavior. It guaranteed that an agent started its training already knowing how to stabilize the satellite decently well, ensuring it explored useful states rather than flailing randomly.</p>
+                    <div class="equation" aria-label="Imitation loss is mean squared difference between the bounded policy output and teacher action">
+                    <math display="block">
+                        <mi>L_imitation</mi>
+                        <mo>=</mo>
+                        <mfrac>
+                            <mrow>
+                            <mi>mean(tanh(μθ(o))</mi>    
+                            <mo>−</mo>
+                            <mi>A_teacher)²</mi>
+                            </mrow>
+                        </mfrac>
+                        </math>
+                    </div>
+                    <p>That initialized the actor–critic network before further RL experiments in direct control. The benefit is a useful initial behavior and state coverage. It is not a guarantee that imitation transfers across action spaces. A three-component
+                        torque teacher cannot blindly copy a 3-component output from a teacher into a 4-component motor output head without explicitly designing a mathematical mapping matrix to translate those targets. Imitation learning gives a great head start, but it does not automatically bridge the structural gap when the action space changed.</p>
+                    <p class="code-reference" data-code="imitation"><span>Code · teacher data and supervised initialization <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="ppo" aria-labelledby="ppo-title">
+                <div class="note-margin"><span class="section-number">03</span><span>OPTIMIZATION</span></div>
+                <div class="note-body">
+                    <h2 id="ppo-title">Algorithm details</h2>
+                    <p>An agent trainde as a proximal policy optimization PPO algorithm. PPO uses collected rollouts and a clipped policy objective to limit the huge updates/steps in parameter space, because the critic should be updated with the same or very close (that is defined by proximity bounds) policy that the actor collected rollouts. The actor provides mean valuse for actions giving observations, to ensure exploration output actions are sampled from normal distribution parametrized by actors output. A separate critic estimates value for advantage estimation. This is an optimization mechanism, that is responsible for NN parameters update.</p>
+                    <div class="network-line" aria-label="Actor: 18 inputs, two hidden layers of 128 tanh units, four outputs"><span>25<small>inputs</small></span><b aria-hidden="true">→</b><span>128 × 128<small>tanh hidden layers</small></span><b aria-hidden="true">→</b><span>4<small>motor commands</small></span></div>
+                    <p>An actor and a critic are separated, each contains 20,356 parameters. Keeping these counts separate matters when estimating inference cost. The supplied configuration uses a fixed policy log standard deviation of −1.5.</p>
+                    <dl
+                    class="compact-facts">
+                        <div><dt>Learning rate</dt>
+                            <dd>3 × 10⁻⁵</dd>
+                        </div>
+                        <div><dt>Discount / GAE</dt>
+                            <dd>0.995 / 0.95</dd>
+                        </div>
+                        <div><dt>Clipping / epochs</dt>
+                            <dd>0.1 / 4</dd>
+                        </div>
+                        <div><dt>Minibatches</dt>
+                            <dd>8 per update epoch</dd>
+                        </div>
+                        </dl>
+                        <p>The configured success condition combines pointing error below 1°, rate error below 0.01 rad/s, and a 1-second dwell. This is an evaluation condition, not a reconstruction of the reward.</p>
+                        <p>The reward is a complex function that consists of: attitude_error, attitude_error_progress, rate, action_smoothness, wheel speed, target_success and other components.  </p>
+                        <p class="source-note">Algorithm background: <a href="https://arxiv.org/abs/1707.06347">Schulman et al., Proximal Policy Optimization Algorithms</a>.</p>
+                        <p class="code-reference" data-code="training"><span>Code · PPO update <small>link pending</small></span></p>
+                        <p class="code-reference" data-code="network"><span>Code · actor–critic network <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="curriculum" aria-labelledby="curriculum-title">
+                <div class="note-margin"><span class="section-number">04</span><span>CURRICULUM / SCENARIOS</span></div>
+                <div class="note-body">
+                    <h2 id="curriculum-title">Curriculum learning: increase difficulty gradually</h2>
+                    <p>Even if imitation learning is helpful, while moving beyond simple motor control in hold position scenario it's not trivial for an agent to learn a complex follow a moving target (while influenced by external disturbances) from scratch. A curriculum learning turns out to be an effective tool right for this job. Training commences from a simple(intermediate) target and complexity adjusted by axis. Training development progressed from easier fixed-angle alignment task to wider initial-attitude distributions. Nonzero initial angular rates, random wheel interruptions can be admix in different proportions. Finally following a moving ground-station reference can be achieved through a number of small intermidiate tasks. Changing one source of difficulty at a time also helps distinguish an exploration problem from a broken estimator or a control-authority limit.</p>
+                    <p>Sensor timing, motor nonidealities, and stochastic faults make the environment more demanding. Realism and domain randomization are different: modeling a disturbance does not establish that its parameters were randomized. The exact distribution of each randomized quantity belongs in the experiment record.</p>
+                    <p class="code-reference" data-code="curriculum"><span>Code · reset distributions and scenarios <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="evaluation" aria-labelledby="evaluation-title">
+                <div class="note-margin"><span class="section-number">05</span><span>GENERALIZATION</span></div>
+                <div class="note-body">
+                    <h2 id="evaluation-title">A universal optimal policy</h2>
+                    <p>The aim is a compact policy that adapts motor use to the state it receives at any scenario.  Better robustness, efficiency, and transfer remain hypotheses to test. Quantization and target-processor timing are later deployment experiments are going to be implemented.</p>
+                    <p></p>
+                    <p></p>
+                    <p class="code-reference" data-code="evaluation"><span>Code · held-out evaluation <small>link pending</small></span></p>
+                </div>
+            </section>
+            <div class="article-end"><a href="technical.html#evolution">Place this work in the project’s evolution ↗</a><a data-release hidden>Published code snapshot ↗</a></div>
+        </main>
+        <footer><span data-author>Research engineering project</span>
+            <div><a data-contact hidden>Contact ↗</a><a href="technical.html">Project &amp; evolution ↗</a></div>
+        </footer>
+    </div>
+</body>
+
+</html>
