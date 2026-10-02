@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="How sensing, estimation, guidance, and supervisory authority surround the reaction-wheel controller.">
+    <meta name="theme-color" content="#101110">
+    <title>GNC &amp; control — ADCS project</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <script src="site-config.js" defer></script>
+    <script src="script.js" defer></script>
+</head>
+
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+        <header class="site-header">
+            <a class="wordmark" href="index.html">
+                <span class="mark" aria-hidden="true">✳</span> ADCS <span class="wordmark-note">/ ISAM</span></a>
+            <nav aria-label="Main navigation">
+                <a href="technical.html">Project</a>
+                <a href="scenarios.html">Scenarios</a>
+                <a href="results.html">Results</a>
+                <a data-repo="" hidden="hidden">Code ↗</a>
+            </nav>
+        </header>
+        <main id="main" class="technical">
+            <header class="note-header">
+                <p class="eyebrow">GNC perspective</p>
+                <h1>Classical GNC structure<br>
+                            <em>with RL learned motor control</em>
+                        </h1>
+                <p class="lead">This section dedicated to projects aspects related to sensing, estimation, guidance, as well as how they implemented in the project and supervisory authority mananges them.</p>
+            </header>
+            <nav class="topic-nav" aria-label="Technical perspectives">
+                <a href="technical.html">Project &amp; evolution</a>
+                <a href="gnc.html" aria-current="page">GNC &amp; control</a>
+                <a href="fdir.html">Fault management</a>
+                <a href="learning.html">RL training</a>
+            </nav>
+            <section class="note-section" id="architecture" aria-labelledby="architecture-title">
+                <div class="note-margin">
+                    <span class="section-number">01</span>
+                    <span>SYSTEM ARCHITECTURE</span>
+                </div>
+                <div class="note-body">
+                    <h2 id="architecture-title">The learned controller has a defined place in the system</h2>
+                    <figure class="architecture-figure">
+                        <a href="assets/gnc-architecture.svg" aria-label="Open the full-size GNC architecture diagram">
+                            <img src="assets/gnc-architecture.svg" width="850" height="575" alt="Guidance and MEKF estimates feed the controller. Supervisory authority and FDIR surround the control loop. Actuators move the spacecraft; delivered sensor data close the loop."></a>
+                        <figcaption>Functional architecture · open for a larger view. The supervisor can override guidance; FDIR also informs supervisory decisions.</figcaption>
+                    </figure>
+                    <p>The task is satellite's attitude control: orient the body and follow a changing pointing reference. Orbit position and velocity provide mission context. The policy does not command orbital maneuvers, only control reactions wheels motors.</p>
+                    <p>The architecture keeps guidance, navigation, and control responsibilities. Reinforcement learning changes the control law and its action space, while estimation and mission management logic remain explicit.</p>
+                    <p>GNC is a broader systems/control-engineering term, whereas ADCS emphasizes satellite's attitude, in current project the satellite doesn’t have thrusters only reaction wheels. Even if suggest a magnetic torque as a thruster is not powerful
+                        enough to accelerate the satellite or to shift it from it’s orbit. In the scope on this project GNC described in relation to attitude. Although this project is about RL control, it is not an end-to-end neural GNC system.
+                        The RL policy primarily occupies the control portion of an otherwise conventional GNC/ADCS architecture. And RL control is just a part of the whole
+                        system that still does a considerable part of attitude control, however it’s not the whole satellite is controlled by RL agent.</p>
+                    <dl class="architecture-list">
+                        <div><dt>Mission &amp; guidance</dt>
+                            <dd>Orbit and mission state produce a target attitude and angular rate, persistent mission phases and continuous references with rate and acceleration limits.</dd>
+                        </div>
+                        <div><dt>Navigation</dt>
+                            <dd>Delivered sensor measurements produce estimated attitude and gyro bias. The controller receives tracking errors derived from that estimate.</dd>
+                        </div>
+                        <div><dt>Control &amp; actuation</dt>
+                            <dd>PD or a learned policy generates torque or motor commands, depending on the experiment. Actuator conditioning and physical limits determine the applied response.</dd>
+                        </div>
+                        <div><dt>Supervisory authority</dt>
+                            <dd>The supervisor acts across the loop. It can select operating modes and override a mission target, including a safe Sun-pointing reference. Fault management supplies estimated wheel authority.</dd>
+                        </div>
+                    </dl>
+                    <p>This separation makes a poor trajectory diagnosable: a target discontinuity, an estimator acquisition failure, and an inadequate control command are different problems.</p>
+                    <p class="code-reference" data-code="supervisor"><span>Code · supervisory authority <small>supervisor</small></span></p>
+                    <p class="code-reference" data-code="mission"><span>Code · mission state <small>mission</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="sensing" aria-labelledby="sensing-title">
+                <div class="note-margin"><span class="section-number">02</span><span>SENSORS / MEKF</span></div>
+                <div class="note-body">
+                    <h2 id="sensing-title">Sensors integration</h2>
+                    <p>Gyro measures the satellite's angular acceleration around its axes. It does not measure where the satellite is pointing directly, but rather how fast that orientation is changing. Star tracker extract mutual constellations arrangement to determine the satellite's exact attitude. Sun and magnetic-field measurements constrain orientation through Sun and Earth magnetic fields reference directions. GNSS supplies position, velocity, and time for navigation context, while this is enought to determine a direct attitude measurement.</p>
+                    <div class="table-wrap">
+                        <table>
+                            <caption>sensor configuration</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Measurement</th>
+                                    <th scope="col">Rate</th>
+                                    <th scope="col">Delivery latency</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Gyroscope / wheel tachometers</th>
+                                    <td>20 Hz</td>
+                                    <td>20 ms</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Star tracker</th>
+                                    <td>2 Hz</td>
+                                    <td>80 ms</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Magnetometer / Sun sensor</th>
+                                    <td>10 Hz</td>
+                                    <td>20 ms</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">GNSS</th>
+                                    <td>1 Hz</td>
+                                    <td>100 ms</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>Multiplicative Extended Kalman Filter is a specialized variant of the Extended Kalman Filter. It was designed specifically to estimate the attitude of an aireal object based on quaternion. The MEKF carries a nominal quaternion and a six-component error state: three small attitude errors and three gyro-bias errors. This retains a quaternion for global orientation while estimating a local correction. The project convention
+                        is scalar-first quaternions, body-to-inertial rotation, and a right-multiplicative error.</p>
+                    <p>The MEKF is designed as a central hosting platform capable of accepting any vector or attitude sensor. The basic operation include:
+                    <ul style="list-style-type: square;">
+                        <li>The guiding thread: The gyroscope is the dynamic heart of the system. It measures rotations at a very high frequency about 100Hz. The MEKF uses this data to continuously update the global attitude. However a gyroscopes drifts. Without correction, after a few minutes an error becomes huge.</li>
+                        <li>Calculating the residual: to correct gyro drift, the MEKF utilizes the other sensors as soon as they deliver data. The key is that the MEKF translates each measurement into comparable information:</li>
+                        <ul style="list-style-type: circle;">
+                            <li>The Star Tracker provides direct orientation measurement. The MEKF compares this to the attitude predicted by the gyro. The discrepancy between the two immediately provides the 3D error vector.</li>
+                            <li>Although GNSS does not directly measure attitude, it is essential for the MEKF to utilize the magnetometer and sun sensor. To determine which magnetic field vector or Sun vector the satellite should observe, the filter must know the satellite's exact position in space. GNSS data therefore feeds the ephemeris and IGRF reference models.</li>
+                            <li>The Magnetometer and Sun sensor provide references, that are essential for correction. The MEKF then uses its position, provided by GNSS to consult its mathematical map - the Earth's magnetic model and determine which vector the satellite should see if the attitude were perfect. The MEKF compares the angle between theoretical vector and an observed vector. This deviation angle is directly related to the orientation error.</li>
+                        </ul>
+                        <li>Centralized fusion: regardless of whether the correction originates from stars, Sun, Earth magnetic field, the MEKF always converts the information into that same 3D error vector. The filter applies the Kalman gain, corrects the global quaternion via multiplication, removes the gyroscope bias, and restarts the process for the next cycle. It transform any vector or attitude measurement into a small 3D geometric correction</li>
+                    </ul>
+                    <p class="code-reference" data-code="sensors"><span>Code · sensor delivery models <small>sensors</small></span></p>
+                    <p class="code-reference" data-code="estimator"><span>Code · MEKF and delayed updates <small>estimator</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="controllers" aria-labelledby="controllers-title">
+                <div class="note-margin"><span class="section-number">03</span><span>CLASSICAL / LEARNED</span></div>
+                <div class="note-body">
+                    <h2 id="controllers-title">Different control modes to train policy</h2>
+                    <p>The conventional reference is a proportional–derivative controller using attitude and rate error. A body-torque command must then be translated into feasible wheel torques by an allocator. Four wheel axes provide actuator redundancy,
+                        subject to geometry and limits.</p>
+                    <div class="table-wrap">
+                        <table>
+                            <caption>Control formulations explored in the project</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Formulation</th>
+                                    <th scope="col">Policy output</th>
+                                    <th scope="col">What remains explicit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Residual PD</th>
+                                    <td>Three corrections to PD body torque</td>
+                                    <td>PD law and wheel allocation</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Direct body torque</th>
+                                    <td>Three body-torque commands</td>
+                                    <td>Wheel allocation</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Direct motor control</th>
+                                    <td>Four wheel-motor commands</td>
+                                    <td>Actuation limits, conditioning, and supervision</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>In current implementation at motor-direct mode, the policy bypasses the ordinary body-torque allocator. Its inputs include wheel speeds and estimated authority, so it can condition motor use on the current actuator state. Its commands still encounter
+                        motor lag, dead zones, friction, torque limits, and speed limits.</p>
+                    <p>A learned mapping can jointly account for tracking error, wheel state, and changing authority without fixing a separate hand-designed rule for every combination. Direct wheel control also permits learned use of the redundant actuator
+                        space. While the trails at different scenarious look promissing, a fair comparative analysis of control modes a required to establish the outputs.</p>
+                    <p></p>
+                    <p class="code-reference" data-code="control"><span>Code · PD, residual and direct control <small>control</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="momentum" aria-labelledby="momentum-title">
+                <div class="note-margin"><span class="section-number">04</span><span>ACTUATORS / MISSION</span></div>
+                <div class="note-body">
+                    <h2 id="momentum-title">Pointing and momentum management</h2>
+                    <p>Reaction wheels exchange angular momentum with the spacecraft. External disturbances can build up stored wheel momentum until speed limits restrict further control. Magnetic torquers create an external torque, <span class="math-inline">τ = m × B</span>,
+                        through interaction with the local magnetic field. The magnetic control law tries to create a torque opposite to current torque created by wheels. But magnetorquers can only create torque perpendicular to Earch magnetic field plane
+                        in satellite’s position. So the desired unloading torque is projected onto the achievable plane. Over an orbit the geomagnetic-field direction changes, which eventually gives controllability in all axes.</p>
+                    <p>During momentum unloading we have two goals: remove stored wheel momentum while also don't ruin spacecraft pointing. The magnetorquer exerts a torque on the entire spacecraft. So wheel control produces approximately the opposite body
+                        torque to preserve pointing while allowing angular momentum to transfer out of the wheels and into Earth's magnetic field interaction. The environment computes predicted magnetic torque from the measured magnetic field and feeds
+                        a compensation term into wheel control. MOMENTUM_UNLOAD is not obligatory a separete supervisory mode, depending on a situation a satellite might continue FINE_POINTING while simultaneously performing MOMENTUM_UNLOAD in the background.</p>
+                    <p
+                    class="aside-note">Next GNC evidence: tracking-error distributions, settling and saturation behavior, estimator acquisition, and matched controller trials. C1’s initial Basilisk harness is the next independent validation step, not a completed cross-simulator
+                        result.</p>
+                        <p class="source-note">Background: <a href="https://www.nasa.gov/smallsat-institute/sst-soa/guidance-navigation-and-control/">NASA small-spacecraft GNC survey</a>, reaction wheels and magnetic torquers.</p>
+                        <p class="code-reference" data-code="actuators"><span>Code · wheel and magnetic actuation <small>actuators</small></span></p>
+                </div>
+            </section>
+            <div class="article-end"><a href="technical.html#evolution">Place this work in the project’s evolution ↗</a><a data-release hidden>Published code snapshot ↗</a></div>
+        </main>
+        <footer><span data-author>Research engineering project · space robotics</span>
+            <div><a data-contact hidden>Contact ↗</a><a href="technical.html">Project &amp; evolution ↗</a></div>
+        </footer>
+    </div>
+</body>
+
+</html>

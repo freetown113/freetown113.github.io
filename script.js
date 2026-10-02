@@ -18,13 +18,21 @@
     if(href){const a=document.createElement('a');a.href=href;a.textContent=el.textContent.replace(/link pending\s*$/,'').trim()+' ↗';el.replaceChildren(a);}
     else if(config.showPendingCodeLinks===false)el.hidden=true;
   });
-  const demo=document.querySelector('[data-video]');
-  if(demo&&mediaPath(config.demoVideo)){
-    demo.src=mediaPath(config.demoVideo);
-    if(mediaPath(config.demoPoster))demo.poster=mediaPath(config.demoPoster);
-    document.querySelector('[data-demo-caption]').textContent=config.demoCaption||'';
-    document.querySelector('[data-demo]').hidden=false;
-    const empty=document.querySelector('[data-demo-empty]');if(empty)empty.hidden=true;
+  const demo1=document.querySelector('[data-video1]');
+  if(demo1&&mediaPath(config.demoVideo1)){
+    demo1.src=mediaPath(config.demoVideo1);
+    if(mediaPath(config.demoPoster1))demo1.poster=mediaPath(config.demoPoster1);
+    document.querySelector('[data-demo-caption1]').textContent=config.demoCaption1||'';
+    document.querySelector('[data-demo1]').hidden=false;
+    const empty=document.querySelector('[data-demo-empty1]');if(empty)empty.hidden=true;
+  }
+  const demo2=document.querySelector('[data-video2]');
+  if(demo2&&mediaPath(config.demoVideo2)){
+    demo2.src=mediaPath(config.demoVideo2);
+    if(mediaPath(config.demoPoster2))demo2.poster=mediaPath(config.demoPoster2);
+    document.querySelector('[data-demo-caption2]').textContent=config.demoCaption2||'';
+    document.querySelector('[data-demo2]').hidden=false;
+    const empty=document.querySelector('[data-demo-empty2]');if(empty)empty.hidden=true;
   }
   const gallery=document.querySelector('[data-training-gallery]');
   if(gallery){
