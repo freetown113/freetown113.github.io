@@ -31,11 +31,11 @@ window.ADCS_SITE = {
 
   // Put the actual B3 video in assets/, then set its relative path.
   // Results shows a labeled placeholder until a real recording is configured.
-  demoVideo1: "./assets/gst_rp_update_0035250.mp4",     // assets/update_0009250.mp4
+  demoVideo1: "assets/gst_rp_update_0035250.mp4",     // assets/update_0009250.mp4
   demoPoster1: "",    // optional still image
   demoCaption1: "ground-station tracking · 90 seconds of simulation, shown at approximately 4× speed. One recorded run.",
 
-  demoVideo2: "./assets/sp_update_0018750_control.mp4",     // assets/update_0009250.mp4
+  demoVideo2: "assets/sp_update_0018750_control.mp4",     // assets/update_0009250.mp4
   demoPoster2: "",    // optional still image
   demoCaption2: "Sun pointing · 90 seconds of simulation, shown at approximately 4× speed. One recorded run.",
 
