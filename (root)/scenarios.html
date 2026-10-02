@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="The same attitude-control system faces different reference motions.">
+    <meta name="theme-color" content="#101110">
+    <title>Pointing scenarios — ADCS project</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <script src="site-config.js" defer></script>
+    <script src="script.js" defer></script>
+    <script src="scenarios.js" defer></script>
+</head>
+
+<body><a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+        <header class="site-header"><a class="wordmark" href="index.html"><span class="mark" aria-hidden="true">✳</span> ADCS <span class="wordmark-note">/ ISAM</span></a>
+            <nav aria-label="Main navigation"><a href="technical.html">Project</a><a href="scenarios.html" aria-current="page">Scenarios</a><a href="results.html">Results</a><a data-repo="" hidden="hidden">Code ↗</a></nav>
+        </header>
+        <main id="main">
+            <header class="note-header">
+                <p class="eyebrow">Missions description</p>
+                <h1>Missions:<br><em>ways to define a target</em></h1>
+                <p class="lead">The same attitude-control system faces different reference motions</p>
+            </header>
+            <p class="scope-line">Four reference-behavior sketches. Geometry and timing are illustrative. These are not trained-agent demonstration rollouts.</p>
+            <nav class="section-nav" aria-label="Scenarios"><a href="#sun_pointing">Sun pointing</a><a href="#ground_target">Ground-target tracking</a><a href="#scheduled_slew">Scheduled slews</a><a href="#nadir_lvlh">Nadir / LVLH</a></nav>
+            <section id="sun_pointing" class="scenario-block" data-scenario="sun_pointing"
+            aria-labelledby="sun_pointing-title">
+                <div class="scenario-copy">
+                    <p class="eyebrow">01 / sun_pointing</p>
+                    <h2 id="sun_pointing-title">Sun pointing</h2>
+                    <p class="scenario-aim">Keep a selected body axis aligned with the Sun direction.</p>
+                    <p>This serves two purposes: <strong>normal Sun-tracking training scenario</strong> and <strong>SAFE_SUN supervisor target</strong>. NASA safe-mode designs commonly use coarse Sun-pointing to achieve a thermally safe, power-positive attitude. In the project, Sun measurements and a Sun-pointing reference also connect to supervisory safe-mode behavior.</p>
+                    <p>The reference is a direction in space rather than a point on Earth. This sketch shows acquisition followed by a hold, it leaves rotation about that direction unspecified. During eclipse, the supervisor must understand that Sun unavailable because geometry instead of diagnosing a dead Sun sensor.</p>
+                    <p class="code-reference" data-code="sunPointing"><span>Code · guidance for this scenario <small>link pending</small></span></p>
+                </div>
+                <figure class="scenario-figure">
+                    <div data-scene><img src="assets/scenario-sun_pointing.svg" width="560" height="410" alt="Keep a selected body axis aligned with the Sun direction."></div>
+                    <figcaption><span>Acquire → hold</span>
+                        <button type="button" data-scene-motion class="motion-toggle" hidden aria-pressed="false">Pause sketch Ⅱ</button>
+                    </figcaption>
+                </figure>
+            </section>
+            <section id="ground_target" class="scenario-block" data-scenario="ground_target" aria-labelledby="ground_target-title">
+                <div class="scenario-copy">
+                    <p class="eyebrow">02 / ground_target</p>
+                    <h2 id="ground_target-title">Ground-target tracking</h2>
+                    <p class="scenario-aim">Follow a fixed location on Earth as the spacecraft passes overhead.</p>
+                    <p>The body reference changes throughout the pass even though the surface target stays fixed. A camera boresight, for example body +Z, points from spacecraft position to an Earth-fixed target:</p>
+                    <div class="equation" aria-label="Pointer direction">
+                    <math display="block">
+                        <mi>Z_b</mi>
+                        <mo>=</mo>
+                        <mfrac>
+                            <mrow>
+                            <mi>R_target</mi>    
+                            <mo>−</mo>
+                            <mi>R_sat</mi>
+                            </mrow>
+                            <mrow>
+                            <mi>||R_target</mi>
+                            <mo>−</mo>
+                            <mi>R_sat||</mi>
+                            </mrow>
+                        </mfrac>
+                        </math>
+                    </div>
+                    <p>The big difference from LVLH is that both attitude and angular rate vary substantially throughout the pass. Continuous references and mission phases connect changing geometry to wheel control. During training some episodes contain small or zero time when a target is in LOS. To facilitate initial phasese of training there is a special "pass_centered" in GroundPassResetMode that keeps only episodes when a ground target is in LOS.</p>
+                    <p class="code-reference" data-code="groundTarget"><span>Code · guidance for this scenario <small>link pending</small></span></p>
+                </div>
+                <figure class="scenario-figure">
+                    <div data-scene><img src="assets/scenario-ground_target.svg" width="560" height="410" alt="Follow a fixed location on Earth as the spacecraft passes overhead."></div>
+                    <figcaption><span>Moving spacecraft → fixed surface point</span>
+                        <button type="button" data-scene-motion class="motion-toggle" hidden aria-pressed="false">Pause sketch Ⅱ</button>
+                    </figcaption>
+                </figure>
+            </section>
+            <section id="scheduled_slew" class="scenario-block" data-scenario="scheduled_slew" aria-labelledby="scheduled_slew-title">
+                <div class="scenario-copy">
+                    <p class="eyebrow">03 / scheduled_slew</p>
+                    <h2 id="scheduled_slew-title">Scheduled slews</h2>
+                    <p class="scenario-aim">Move between a sequence of pointing references, with an accent at each one.</p>
+                    <p>This mission can be selfsufficient, but can also help a lot to elaborate a useful behavior when rather than suddenly jumping the guidance system produce a feasible slew trajectory with <strong>maximum angular velocity, maximum angular acceleration</strong>. The target trajectory can use a trapezoidal angular-rate profile: accelerate, constant-rate, decelerate, settle. The sketch demonstrates how this can looks like: a satelliete smoothly move its pointer from a target to another while fixing at each target for a while.</p>
+                    <p>This view makes the distinction between target selection, reference shaping, and controller response visible. A useful experiment would check settling before the next scheduled maneuver, along with actuator saturation.</p>
+                    <p class="code-reference"
+                    data-code="scheduledSlew"><span>Code · guidance for this scenario <small>link pending</small></span></p>
+                </div>
+                <figure class="scenario-figure">
+                    <div data-scene><img src="assets/scenario-scheduled_slew.svg" width="560" height="410" alt="Move between a sequence of pointing references, with a dwell at each one."></div>
+                    <figcaption><span>Hold → slew → settle</span>
+                        <button type="button" data-scene-motion class="motion-toggle" hidden aria-pressed="false">Pause sketch Ⅱ</button>
+                    </figcaption>
+                </figure>
+            </section>
+            <section id="nadir_lvlh" class="scenario-block" data-scenario="nadir_lvlh" aria-labelledby="nadir_lvlh-title">
+                <div class="scenario-copy">
+                    <p class="eyebrow">04 / nadir_lvlh</p>
+                    <h2 id="nadir_lvlh-title">Nadir / LVLH</h2>
+                    <p class="scenario-aim">Keep one axis directed toward Earth while following the local orbital frame.</p>
+                    <p>Nadir fixes an Earth-facing direction. The local vertical/local horizontal frame also determines the remaining orientation relative to the orbit; the second line indicates the along-track direction in this planar sketch.</p>
+                    <p>The project uses a nadir/LVLH fallback for ground-station guidance: while ground target is lost from LOS a mission manager changes mission to LVLH. Holding this reference in orbit requires a changing inertial attitude; it is not the same as holding one inertial quaternion.</p>
+                    <p class="code-reference" data-code="nadirLvlh"><span>Code · guidance for this scenario <small>link pending</small></span></p>
+                </div>
+                <figure class="scenario-figure">
+                    <div data-scene><img src="assets/scenario-nadir_lvlh.svg" width="560" height="410" alt="Keep one axis directed toward Earth while following the local orbital frame."></div>
+                    <figcaption><span>Earth-facing → orbit-relative orientation</span>
+                        <button type="button" data-scene-motion class="motion-toggle" hidden aria-pressed="false">Pause sketch Ⅱ</button>
+                    </figcaption>
+                </figure>
+            </section>
+            <p class="article-end"><a href="results.html">See the experiment evidence ↗</a><a href="gnc.html">How guidance connects to control ↗</a></p>
+        </main>
+        <footer><span data-author>Research engineering project · space robotics</span>
+            <div><a data-contact hidden>Contact ↗</a><a href="technical.html">Project &amp; evolution ↗</a></div>
+        </footer>
+    </div>
+</body>
+
+</html>
