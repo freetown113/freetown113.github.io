@@ -1,64 +1,220 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Inside the ADCS project: estimated state, learned motor control, execution boundaries, and the next validation experiments.">
-  <meta name="theme-color" content="#101110">
-  <title>Project &amp; evolution — satellite attitude control</title>
-  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
-  <script src="site-config.js" defer></script>
-  <script src="script.js" defer></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Inside the ADCS project: estimated state, learned motor control, execution boundaries, and the next validation experiments.">
+    <meta name="theme-color" content="#101110">
+    <title>Project &amp; evolution — satellite attitude control</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <script src="site-config.js" defer></script>
+    <script src="script.js" defer></script>
 </head>
+
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
-<div class="page">
-  <header class="site-header"><a class="wordmark" href="index.html"><span class="mark" aria-hidden="true">✳</span> ADCS <span class="wordmark-note">/ ISAM</span></a><nav aria-label="Main navigation"><a href="technical.html" aria-current="page">Project</a><a href="scenarios.html">Scenarios</a><a href="results.html">Results</a><a data-repo="" hidden="hidden">Code ↗</a></nav></header>
-  <main id="main" class="technical">
-    <header class="note-header"><p class="eyebrow">Project &amp; evolution</p><h1>The entire <br>project <em>in pieces</em></h1><p class="lead">How the simulation, onboard estimation, control, and learning fit together—and how each milestone changed the problem.</p></header>
-    <nav class="section-nav" aria-label="Engineering topics"><a href="#control">01 Control &amp; estimation</a><a href="#learning">02 Reinforcement learning</a><a href="#execution">03 Execution</a><a href="#evidence">04 Evidence</a><a href="#evolution">05 Evolution</a></nav>
-    <section class="note-section" id="control" aria-labelledby="control-title">
-      <div class="note-margin"><span class="section-number">01</span><span>GNC / AUTONOMY</span></div>
-      <div class="note-body"><h2 id="control-title">Separation of tasks: estimate, decision, control</h2><p>The central design choice is to separate the physical state, the onboard estimate, and the supervisory decision. Each has a different job and can access different information. Such the whole system is protected to be corrupted by a fausse readings from a sensor.</p>
-        <dl class="architecture-list">
-          <div><dt>Sense &amp; estimate</dt><dd>Own position and attitude identification requires information from sensors. Gyroscope and attitude-sensor measurements feed a multiplicative extended Kalman filter (MEKF). Each sensor provide measurements with its own frequency, replay approach with fixed-lag permits incorporate delayed observations at their measurement time.</dd></div>
-          <div><dt>Guide &amp; command</dt><dd>A satellite has to accolplish a mission. A guidance abstraction has to produces attitude and rate references for each mission, mission manager has to oreder in-missopn priorities, control provides exact commands to a plant. e.g. in the ground-pass scenario, the learned policy issues four wheel-motor commands from tracking errors and estimated wheel authority.</dd></div>
-          <div><dt>Detect &amp; supervise</dt><dd>Detect a possibility of a fault, evaluate it and deal with it. Fault detection estimates available wheel authority from telemetry. Supervisory logic can change operating modes or override the target. An agent operates on the lowest lever - control the motors, all abstractions above implemented independently, an agent doesn't have truth information about control over wheels degradation or loss.</dd></div>
-        </dl>
-        <p>Reaction wheels have a major physical limitation: momentum saturation. A reaction wheel can store only a limited amount of angular momentum before reaching its maximum rotational speed. Over time, external disturbances and the satellite’s operational tasks can cause the wheels to spin progressively faster as they compensate for accumulated angular momentum. Eventually, a wheel may reach its maximum RPM and lose the ability to provide additional control torque in the required direction. To prevent this, operators perform momentum dumping, or desaturation, by applying an external torque that allows reaction wheels to remove angular momentum by slowing down. In low Earth orbit, magnetorquers can interact with Earth’s magnetic field to generate this external torque, enabling the reaction wheels to shed accumulated momentum and return to their normal operating range.</p>
-        <p class="aside-note"><a href="gnc.html">GNC: architecture, sensors, estimation, and control ↗</a><br><a href="fdir.html">FDIR: detection, redundancy, and recovery ↗</a></p>
-      <p class="code-reference" data-code="guidance"><span>Code · guidance and reference generation <small>link pending</small></span></p><p class="code-reference" data-code="estimator"><span>Code · attitude estimation <small>link pending</small></span></p><p><a class="text-link" href="scenarios.html">Explore the four pointing scenarios ↗</a></p></div>
-    </section>
-    <section class="note-section" id="learning" aria-labelledby="learning-title">
-      <div class="note-margin"><span class="section-number">02</span><span>ML / RL</span></div>
-      <div class="note-body"><h2 id="learning-title">A small policy with a specific task</h2><p>An agent is trained with proximal policy optimization PPO algorithm. An approximator is a tiny two layers NN with tanh activation function. Whatever happens an agent provides commands for each of 4 reaction wheels. The approximator paramenters are adjusted to provide an adequate torque given the observation vector. However an agent only control the motors, mission guidance, supervision, fault detection, signal estimation implemented as separate layers.</p>
-        <div class="network-line" aria-label="Actor architecture: 25 inputs, two hidden layers of 128 tanh units each, four outputs"><span>25 <small>inputs</small></span><b aria-hidden="true">→</b><span>128 × 128 <small>activation</small></span><b aria-hidden="true">→</b><span>4 <small>commands</small></span></div>
-        <p>The observation contains attitude-error, rate-error vectors, four measured wheel speeds, four previous actions, four estimated wheel-authority values, an estimator confidence value and 6 supervisory mode values. The actor has <strong>20,356 parameters</strong> that is relatively small to be optimized for an embedded solution. The critic is separate and not user at inference time.</p>
-        <h3>How the learning problem evolved</h3><p>The project explores corrections to a conventional proportional–derivative (PD) controller, then direct body-torque commands, then direct wheel-motor commands. These move more responsibility into the policy. An agent operate above a PD controller, however in the scope of this project a deliberate choise was to use PD imitation as a training tool.</p>
-        <p class="aside-note"><a href="learning.html">RL training: teacher, action spaces, curriculum, and evaluation ↗</a></p>
-      <p class="code-reference" data-code="network"><span>Code · actor and observation interface <small>link pending</small></span></p></div>
-    </section>
-    <section class="note-section" id="execution" aria-labelledby="execution-title">
-      <div class="note-margin"><span class="section-number">03</span><span>SOFTWARE / EMBEDDED</span></div>
-      <div class="note-body"><h2 id="execution-title">Make timing and interfaces explicit</h2><p>Since the beginning of the project the simulation transformed from pure math based closer to the Hardware-In-The-Loop. In the current implementation the physics advances at 100 Hz and control at 20 Hz. Sensors have different delivery rates and latencies. The policy runs against delivered information rather than a simultaneous snapshot of the simulated plant.</p><p>Current implementation includes explicit sensor, navigation, reference, and actuator messages, with a flight-style scheduler. This creates a boundary between the controller and the simulator, so each can be exercised separately.</p><p>A small network makes deployment a question worth measuring. Target-processor latency, memory use, numerical precision, and deadline behavior still require measurements</p><p class="code-reference" data-code="interfaces"><span>Code · flight-style interfaces <small>link pending</small></span></p></div>
-    </section>
-    <section class="note-section" id="evidence" aria-labelledby="evidence-title">
-      <div class="note-margin"><span class="section-number">04</span><span>VALIDATION / INFERENCE</span></div>
-      <div class="note-body"><h2 id="evidence-title">Demonstration of agent capabilities</h2><p>Currently, the agent is evaluated across six scenarios, each described in detail on a separate page. Since every milestone introduces substantial changes to the operating conditions, a model trained for a previous milestone is usually no longer able to perform optimally and therefore requires retraining or fine-tuning. For this reason, optimization for embedded inference is developed as a parallel track rather than as part of the main training workflow. Transferring an already optimized model to a new milestone is even more challenging than adapting the original model, so embedded deployment requires its own dedicated optimization process.</p>
-        <dl class="evidence-list"><div><dt>Parameters optimization</dt><dd>The neural network parameters were optimized using quantization techniques. Because the network is already relatively small, there is limited room for further optimization, and pruning is not particularly suitable for the same reason.</dd></div><div><dt>Embedded inference</dt><dd>On the other hand, the compact size of the approximator makes it a promising candidate for implementing the agent directly in Rust using matrix multiplication operations.</dd></div><div><dt>Independent check</dt><dd>Upcomming implementation includes an initial open-loop Basilisk interface harness. Numerical execution and independent closed-loop validation remain to be completed.</dd></div></dl>
-        <p class="aside-note">Scope: simulation research. Hardware transfer and flight qualification have not been demonstrated.</p>
-        <a class="text-link" data-release hidden>Code for this snapshot ↗</a>
-      <p class="code-reference" data-code="evaluation"><span>Code · evaluation harness <small>link pending</small></span></p><p><a class="text-link" href="results.html">Recordings and results ↗</a></p></div>
-    </section>
-    <section class="note-section evolution" id="evolution" aria-labelledby="evolution-title">
-      <div class="note-margin"><span class="section-number">↳</span><span>PROJECT HISTORY</span></div>
-      <div class="note-body"><h2 id="evolution-title">Each milestone changes the problem.</h2>
-        <ol class="milestones"><li><span class="milestone-id">Foundation</span><div><h3>Learning with a conventional controller</h3><p>Rigid-body attitude dynamics, a PD reference controller, residual actions, and imitation learning establish a starting point.</p></div></li><li><span class="milestone-id">A1</span><div><h3>Delivered telemetry</h3><p>Gyroscope and wheel-speed samples acquire delivery timing. Attitude-error inputs still use simulator truth at this stage.</p></div></li><li><span class="milestone-id">A2</span><div><h3>Orbital context</h3><p>Orbit and sensor models add star, magnetic-field, Sun, and GNSS measurements. Generating them precedes using them for policy state estimation.</p></div></li><li><span class="milestone-id">A3</span><div><h3>Knowing the attitude</h3><p>The MEKF estimates attitude and gyro bias. Acquisition behavior becomes part of the control problem; initial delay compensation is still approximate.</p></div></li><li><span class="milestone-id">B1</span><div><h3>Closing the model gaps</h3><p>Fixed-lag measurement replay and actuator nonidealities replace earlier approximations.</p></div></li><li><span class="milestone-id">B2</span><div><h3>Fault-aware operation</h3><p>Telemetry-derived wheel authority and supervisory decisions replace privileged knowledge of injected faults.</p></div></li><li><span class="milestone-id">B3</span><div><h3>Ground-pass tracking</h3><p>Persistent mission phases, continuous references, windowed authority estimation, and magnetic momentum management connect control to a mission.</p></div></li><li><span class="milestone-id">C1 · ongoing</span><div><h3>Independent verification</h3><p>Explicit flight-style interfaces and an initial open-loop Basilisk harness establish the next validation boundary. Numerical validation remains pending.</p></div></li></ol>
-      </div>
-    </section>
-  </main>
-  <footer><span data-author>Research engineering project · space robotics</span><div><a data-contact hidden>Contact ↗</a><a href="index.html">Back to overview ↗</a></div></footer>
-</div>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+        <header class="site-header"><a class="wordmark" href="index.html"><span class="mark" aria-hidden="true">✳</span> ADCS <span class="wordmark-note">/ ISAM</span></a>
+            <nav aria-label="Main navigation"><a href="technical.html" aria-current="page">Project</a><a href="scenarios.html">Scenarios</a><a href="results.html">Results</a><a data-repo="" hidden="hidden">Code ↗</a></nav>
+        </header>
+        <main id="main" class="technical">
+            <header class="note-header">
+                <p class="eyebrow">Project &amp; evolution</p>
+                <h1>Several connected problems <br> in <em> one project</em></h1>
+                <p class="lead">I started with attitude control. Each next step added a practical difficulty: imperfect measurements, unknown failures, moving targets or a different way to run the network.</p>
+            </header>
+            <nav class="section-nav" aria-label="Engineering topics"><a href="#control">01 Control &amp; estimation</a><a href="#learning">02 Reinforcement learning</a><a href="#execution">03 Execution</a><a href="#evidence">04 Evidence</a><a href="#evolution">05 Evolution</a></nav>
+            <section class="note-section" id="control" aria-labelledby="control-title">
+                <div class="note-margin"><span class="section-number">01</span><span>GNC / AUTONOMY</span></div>
+                <div class="note-body">
+                    <h2 id="control-title">Separation of tasks: estimate, decision, control</h2>
+                    <p>The central design choice is to separate the physical state, the onboard estimate, and the supervisory decision. Each has a different role and access to different information. This separation helps prevent incorrect sensor readings from directly corrupting the behavior of the entire system. Sense & estimate</p>
+                    <dl class="architecture-list">
+                        <div><dt>Sense &amp; estimate</dt>
+                            <dd>Determining the satellite’s position and attitude requires information from sensors. Gyroscope and attitude-sensor measurements are processed by a multiplicative extended Kalman filter (MEKF). Each sensor provides measurements at its own frequency, while a fixed-lag replay approach allows delayed observations to be incorporated at their actual measurement time.</dd>
+                        </div>
+                        <div><dt>Guide &amp; command</dt>
+                            <dd>A satellite has a mission to accomplish. The guidance layer produces attitude and angular-rate references for each mission task, while the mission manager organizes priorities and transitions within the mission. The control layer then provides the actual commands to the plant. For example, in the ground-pass scenario, the learned policy generates four reaction-wheel motor commands based on tracking errors and estimated wheel authority.</dd>
+                        </div>
+                        <div><dt>Detect &amp; supervise</dt>
+                            <dd>This layer detects possible faults, evaluates them, and determines how the system should respond. Fault-detection logic estimates the available wheel authority from telemetry, while the supervisory logic can change operating modes or override the current target. The RL agent operates at the lowest level, controlling the reaction-wheel motors. All higher-level abstractions are implemented independently. The agent has no access to ground-truth information about wheel degradation or failures and must operate using the information provided through the observation.</dd>
+                        </div>
+                    </dl>
+                    <p>Reaction wheels have a major physical limitation: momentum saturation. A reaction wheel can store only a limited amount of angular momentum before reaching its maximum rotational speed. Over time, external disturbances and the satellite’s operational tasks can cause the wheels to spin progressively faster as they compensate for accumulated angular momentum. Eventually, a wheel may reach its maximum RPM and lose the ability to provide additional control torque in the required direction. To prevent this, the spacecraft can perform momentum dumping, or desaturation, by applying an external torque while the reaction wheels are slowed back toward their normal operating range. In low Earth orbit, magnetorquers can interact with the Earth’s magnetic field to generate this external torque, allowing accumulated angular momentum to be transferred away from the reaction wheels.</p>
+                    <p class="aside-note"><a href="gnc.html">GNC: architecture, sensors, estimation, and control ↗</a>
+                        <br><a href="fdir.html">FDIR: detection, redundancy, and recovery ↗</a></p>
+                    <p class="code-reference" data-code="guidance"><span>Code · guidance and reference generation <small>link pending</small></span></p>
+                    <p class="code-reference" data-code="estimator"><span>Code · attitude estimation <small>link pending</small></span></p>
+                    <p><a class="text-link" href="scenarios.html">Explore the four pointing scenarios ↗</a></p>
+                </div>
+            </section>
+            <section class="note-section" id="learning" aria-labelledby="learning-title">
+                <div class="note-margin"><span class="section-number">02</span><span>ML / RL</span></div>
+                <div class="note-body">
+                    <h2 id="learning-title">A small policy with a specific task</h2>
+                    <p>The agent is trained using the Proximal Policy Optimization (PPO) algorithm. The approximator is a small two-layer neural network with tanh activation functions. Regardless of the current system state, the agent produces commands for all four reaction wheels. The network parameters are trained to produce appropriate torque commands from the observation vector. However, the agent is responsible only for motor control. Mission guidance, supervision, fault detection, and state estimation are implemented as separate layers.</p>
+                    <div class="network-line" aria-label="Actor architecture: 25 inputs, two hidden layers of 128 tanh units each, four outputs"><span>25 <small>inputs</small></span><b aria-hidden="true">→</b><span>128 × 128 <small>activation</small></span><b aria-hidden="true">→</b><span>4 <small>commands</small></span></div>
+                    <p>The observation contains attitude error and rate error vectors, four measured wheel speeds, four previous actions, four estimated wheel authority values, an estimator confidence value, and six supervisory mode values. The actor has 19460 parameters, making it relatively small and therefore an interesting candidate for optimization for embedded deployment. The critic is implemented separately and is not used during inference.</p>
+                    <h3>How the learning problem evolved</h3>
+                    <p>The project starts with corrections to a conventional proportional–derivative (PD) controller, then moves to direct body-torque commands, and finally to direct reaction-wheel motor commands. Each stage gives more control responsibility to the learned policy. The agent initially operates on top of a PD controller, but as the project progresses, direct control is introduced. I also deliberately use imitation of the PD controller as a training tool to provide the agent with useful initial behavior.</p>
+                    <p class="aside-note"><a href="learning.html">RL training: teacher, action spaces, curriculum, and evaluation ↗</a></p>
+                    <p class="code-reference" data-code="network"><span>Code · actor and observation interface <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="execution" aria-labelledby="execution-title">
+                <div class="note-margin"><span class="section-number">03</span><span>SOFTWARE / EMBEDDED</span></div>
+                <div class="note-body">
+                    <h2 id="execution-title">Make timing and interfaces explicit</h2>
+                    <p>Alongside the main control work, it is important to understand what transferring this small network to a resource-constrained onboard computer would involve and how the implementation could be adapted to limited computational resources. In my experiments, I export the actor, quantize it, and run inference using a separate implementation in Rust. I deployed this implementation on a host computer as a first step toward a possible embedded implementation. This allowed me to verify the process, explore tradeoffs, understand the limitations, and identify potential problems. There are two main questions, and it is useful to evaluate them separately: (1) compare the Rust and NumPy implementations using the same observations to identify numerical differences, and (2) let the FP32 and Rust controllers run independently in closed loop from matched initial conditions. The second comparison shows how small differences in the generated actions develop over time through feedback.</p>
+                    <p>During these experiments, I tried several quantization approaches but eventually focused on two formats. W8A32 stores weights as 8-bit integers and uses floating point arithmetic after reconstructing them. W8A8HI also quantizes the inputs to the later linear layers and uses integer accumulation for those layers. Its first layer keeps floating-point inputs and accumulation, while nonlinearities and output transformations also remain in floating point. From the actor–critic architecture, only the actor is required for inference. For the current actor implementation, the calculated serialized size decreases from 77896 bytes to 21344 bytes with W8A8HI, a reduction of about 72.6%. Storage reduction and inference speed are separate questions. Here, the reduction in storage size is particularly relevant for an onboard computer with limited resources.</p>
+                    <p>In terms of computational cost, the dense layers require 19200 multiply–accumulate operations per inference, or 0.384 million MACs/s at 20 Hz. Bias additions, tanh, and the rest of the ADCS require additional computation. The Rust closed-loop implementation running on a host machine shows a 99th-percentile inference time of around 120 microseconds. Even a hypothetical 100 MHz processor would provide about 260 cycles per MAC, while at 10 MHz the full 50 ms budget would still correspond to roughly 26 cycles per MAC. These experiments suggest that CPU-only inference is a promising option, but measurements on a specific embedded device are still required.</p>
+                    <p class="code-reference" data-code="interfaces"><span>Code · flight-style interfaces <small>link pending</small></span></p>
+                </div>
+            </section>
+            <section class="note-section" id="evidence" aria-labelledby="evidence-title">
+                <div class="note-margin"><span class="section-number">04</span><span>VALIDATION / INFERENCE</span></div>
+                <div class="note-body">
+                    <h2 id="evidence-title">Demonstration of agent capabilities</h2>
+                    <p>I use a common experimental setup with varying conditions to demonstrate how the controller behaves as the task becomes increasingly difficult for the RL agent. Each milestone focuses on a different topic and increases the sophistication of the system, gradually moving from a simplified environment toward a more realistic ADCS simulation.</p>
+                    <p>The latest completed milestone is B3, and I am still investigating several suspicious behaviors that prevent the agent from learning a better policy in B4. Another planned step is an initial open-loop interface harness for Basilisk. Numerical execution and independent closed-loop validation still need to be completed.</p>
+                    <p>This is a learning and simulation project. The main result is a working chain of models, controllers, and experiments, together with enough explanation to understand how the system behaves and to continue developing it.</p>
+                    <p class="aside-note">Scope: simulation research. Hardware transfer and flight qualification have not been demonstrated.</p>
+                    <a class="text-link" data-release hidden>Code for this snapshot ↗</a>
+                    <p class="code-reference" data-code="evaluation"><span>Code · evaluation harness <small>link pending</small></span></p>
+                    <p><a class="text-link" href="results.html">Recordings and results ↗</a></p>
+                </div>
+            </section>
+            <section class="note-section evolution" id="evolution" aria-labelledby="evolution-title">
+                <div class="note-margin"><span class="section-number">↳</span><span>PROJECT HISTORY</span></div>
+                <div class="note-body">
+                    <h2 id="evolution-title">Each milestone changes the problem.</h2>
+                    <ol class="milestones">
+                        <li><span class="milestone-id">Foundation</span>
+                            <div>
+                                <h3>Learning with a conventional controller</h3>
+                                <p>Rigid-body attitude dynamics, a PD reference controller, residual actions, and imitation learning establish a starting point.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">A1</span>
+                            <div>
+                                <h3>Delivered telemetry</h3>
+                                <p>Gyroscope and wheel-speed samples acquire delivery timing. Attitude-error inputs still use simulator truth at this stage.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">A2</span>
+                            <div>
+                                <h3>Orbital context</h3>
+                                <p>Orbit and sensor models add star, magnetic-field, Sun, and GNSS measurements. Generating them precedes using them for policy state estimation.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">A3</span>
+                            <div>
+                                <h3>Knowing the attitude</h3>
+                                <p>The MEKF estimates attitude and gyro bias. Acquisition behavior becomes part of the control problem; initial delay compensation is still approximate.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">B1</span>
+                            <div>
+                                <h3>Closing the model gaps</h3>
+                                <p>Fixed-lag measurement replay and actuator nonidealities replace earlier approximations.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">B2</span>
+                            <div>
+                                <h3>Fault-aware operation</h3>
+                                <p>Telemetry-derived wheel authority and supervisory decisions replace privileged knowledge of injected faults.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">B3</span>
+                            <div>
+                                <h3>Ground-pass tracking</h3>
+                                <p>Persistent mission phases, continuous references, windowed authority estimation, and magnetic momentum management connect control to a mission.</p>
+                            </div>
+                        </li>
+                        <li><span class="milestone-id">C1 · ongoing</span>
+                            <div>
+                                <h3>Independent verification</h3>
+                                <p>Explicit flight-style interfaces and an initial open-loop Basilisk harness establish the next validation boundary. Numerical validation remains pending.</p>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+            <section class="note-section" id="articles" aria-labelledby="articles-title">
+                <div class="note-margin">
+                    <span class="section-number">↳</span><span>READING GUIDE</span>
+                </div>
+                <div class="note-body">
+                    <h2 id="articles-title">Follow the chapters</h2>
+                    <p>The articles tell the longer story. These pages give a shorter view of the same work, with links between the parts.</p>
+                    <p><a href="https://medium.com/@freetown113/rl-agent-trained-to-control-a-satellites-attitude-determination-and-control-system-18565da52787">Read the introduction on Medium ↗</a></p>
+                    <ol class="milestones">
+                        <li>
+                            <span class="milestone-id">Chapter 01</span>
+                            <div>
+                                <h3>Why I started</h3>
+                                <p>The problem, the learning goals and the project’s scope.</p>
+                                <a href="index.html">Project overview ↗</a> <a data-article="1" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 02</span>
+                            <div>
+                                <h3>Mechanics and a conventional baseline</h3>
+                                <p>The simulator, wheel fault modes and pure PD control.</p>
+                                <a href="gnc.html#architecture">Project overview ↗</a> <a data-article="2" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 03</span>
+                            <div>
+                                <h3>Training the RL agent</h3>
+                                <p>Imitation, PPO, curriculum and direct motor commands.</p>
+                                <a href="learning.html">Project overview ↗</a> <a data-article="3" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 04</span>
+                            <div>
+                                <h3>Working with measurements</h3>
+                                <p>Sensor timing, attitude estimation and what reaches the policy.</p>
+                                <a href="gnc.html#sensing">Project overview ↗</a> <a data-article="4" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 05</span>
+                            <div>
+                                <h3>Recognizing and handling faults</h3>
+                                <p>Watchdogs, model-based monitoring, authority estimates and supervision.</p>
+                                <a href="fdir.html">Project overview ↗</a> <a data-article="5" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 06</span>
+                            <div>
+                                <h3>Giving control a mission</h3>
+                                <p>Orbit geometry, reference generation and persistent mission phases.</p>
+                                <a href="scenarios.html">Project overview ↗</a> <a data-article="6" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="milestone-id">Chapter 07</span>
+                            <div>
+                                <h3>Quantization and Rust inference</h3>
+                                <p>A separate deployment problem, using a B4 policy as the example.</p>
+                                <a href="technical.html#execution">Project overview ↗</a> <a data-article="7" hidden>Read the chapter ↗</a>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+        </main>
+        <footer><span data-author>Research engineering project · space robotics</span>
+            <div><a data-contact hidden>Contact ↗</a><a href="index.html">Back to overview ↗</a></div>
+        </footer>
+    </div>
 </body>
+
 </html>

@@ -21,66 +21,92 @@
         <main id="main" class="technical">
             <header class="note-header">
                 <p class="eyebrow">FDIR perspective</p>
-                <h1>How does policy react <br><em>on faults</em></h1>
-                <p class="lead">Detection, isolation, and recovery around a controller that must work with estimated wheel health</p>
+                <h1>Recognizing faults <br><em>and deciding how to respond</em></h1>
+                <p class="lead">The simulator knows which fault it injected. The control system has to infer what happened from measurements and the response to commands</p>
             </header>
             <nav class="topic-nav" aria-label="Technical perspectives"><a href="technical.html">Project &amp; evolution</a><a href="gnc.html">GNC &amp; control</a><a href="fdir.html" aria-current="page">Fault management</a><a href="learning.html">RL training</a></nav>
-            <section class="note-section" id="fault-model"
-            aria-labelledby="fault-model-title">
-                <div class="note-margin"><span class="section-number">01</span><span>FAILURE MODEL</span></div>
+            <section class="note-section" id="fault-model" aria-labelledby="fault-model-title">
+                <div class="note-margin">
+                    <span class="section-number">01</span><span>FAILURE MODEL</span>
+                </div>
                 <div class="note-body">
-                    <h2 id="fault-model-title">A failed motor vs. a vanished wheel</h2>
-                    <p>The project’s fault-tolerance problem begins with four reaction wheels and intermittent loss of motor authority. An injected motor-off fault removes drive torque; it does not mean the rotor disappears or instantly stops spinning. Stored
-                        momentum and passive mechanical effects still matter.</p>
-                    <p>The supplied B3 scenario randomly selects a wheel and includes failure and recovery events. Its configured failure and recovery hazards are 0.1 s⁻¹ and 0.5 s⁻¹, with zero retained drive torque during failure. These are accelerated
-                        training-scenario settings, not spacecraft component reliability estimates.</p>
-                    <p>Three distinct events must remain separate: the simulated actuator loses authority, telemetry supports a diagnosis, and the supervisor changes its decision. Giving the controller the injected fault flag would erase the uncertainty
-                        this project is intended to model.</p>
-                    <p class="code-reference"
-                    data-code="actuators"><span>Code · fault injection and motor response <small>link pending</small></span></p>
+                    <h2 id="fault-model-title">A failed motor and a bad measurement are different problems</h2>
+                    <p>The motor fault model can reduce available torque or remove it completely. Faults can persist or appear intermittently. A wheel can keep rotating after motor torque disappears, so nonzero wheel speed alone is not proof that the motor
+                        works.</p>
+                    <p>A tachometer problem affects the reported wheel speed rather than the physical motor. Missing samples, stale values or measurement errors can make a healthy motor appear unresponsive. The monitor therefore needs both timing checks
+                        and a model of the expected response.</p>
+                    <p>During training, injected faults create experience. Their configured frequency is a training choice, not an estimate of real spacecraft failure rates.</p>
+                    <p class="code-reference" data-code="environment">Code · fault injection and integration</p>
+                    <p class="code-reference" data-code="sensors">Code · wheel-speed measurements</p>
                 </div>
             </section>
             <section class="note-section" id="detection" aria-labelledby="detection-title">
-                <div class="note-margin"><span class="section-number">02</span><span>DETECTION / ISOLATION</span></div>
+                <div class="note-margin">
+                    <span class="section-number">02</span><span>DETECTION / ISOLATION</span>
+                </div>
                 <div class="note-body">
-                    <h2 id="detection-title">Infer authority from a response, not a label</h2>
-                    <p>The fault-management path uses delivered telemetry to estimate how much wheel authority remains. Current implementation moves the authority estimate to a windowed regression approach, the supplied configuration uses a 0.4-second window and a minimum of
-                        12 samples. The health estimate is a belief about actuator response, distinct from the simulator’s true state.</p>
-                    <p>The detection problem is harder than checking whether a wheel turns. Low commanded torque may provide little excitation; friction and dead zones can suppress motion; delivery delay can make a healthy response appear late. A wheel may
-                        also continue rotating after losing motor torque. Diagnosis must relate commands to observed response with these effects in mind.</p>
-                    <p>A continuous authority estimate can inform the controller without implying that one noisy estimate should immediately trigger a mode transition. Diagnostic confidence, permission to use an actuator, and permission to resume the mission
-                        are different decisions.</p>
-                    <p class="code-reference" data-code="fdir"><span>Code · authority estimation <small>link pending</small></span></p>
+                    <h2 id="detection-title">Several checks, each with its own job</h2>
+                    <p>A <strong>watchdog</strong> checks whether fresh tachometer data arrive. A <strong>motor monitor</strong> asks whether the measured change in wheel speed agrees with the predicted motor torque. <strong>Hysteresis and persistence</strong>                        turn this evidence into health states without reacting to every small fluctuation.</p>
+                    <p>The motor monitor estimates authority over a window of usable samples. Let x be predicted torque and y be the torque inferred from wheel acceleration, with the modeled friction term included. A fit through the origin gives:</p>
+                    <div class="equation">estimated authority = Σ(x · y) / Σ(x²)</div>
+                    <p>The implementation bounds the estimate between zero and one and requires enough excitation. Using a window avoids dividing by a small command from one noisy sample. It is a regression estimate, not an exponential moving average, even
+                        though an internal field retains the old <code>wheel_authority_ewma</code> name.</p>
+                    <p>Sample timestamps are used to calculate the change in wheel speed. The fit still pairs that response with the current motor-torque prediction, rather than a stored average over the matching sample interval. With changing commands or
+                        latency, these can refer to different moments. A window can soften the effect, but does not align them automatically.</p>
+                    <p class="code-reference" data-code="fdir">Code · watchdogs, windowed fit and health transitions</p>
                 </div>
             </section>
             <section class="note-section" id="recovery" aria-labelledby="recovery-title">
-                <div class="note-margin"><span class="section-number">03</span><span>RECOVERY / SUPERVISION</span></div>
+                <div class="note-margin">
+                    <span class="section-number">03</span><span>RECOVERY / SUPERVISION</span>
+                </div>
                 <div class="note-body">
-                    <h2 id="recovery-title">Recovery needs stronger evidence</h2>
-                    <p>A simulated recovery event restores physical motor capability. It does not instantly establish that the onboard estimate has recovered or that the mission can safely resume. The supervisor retains authority over operating modes and
-                        target overrides, rather than delegating those decisions to the learned policy.</p>
-                    <h3>Hysteresis and persistence</h3>
-                    <p>For a recovery policy, separate entry and exit conditions create hysteresis: the evidence required to declare recovery differs from the evidence that triggered degradation. Persistence or dwell requirements add a time condition. Together,
-                        these can prevent noisy measurements from repeatedly toggling modes, while introducing a deliberate delay that needs evaluation.</p>
-                    <p><strong>Implementation boundary:</strong> telemetry-derived authority and supervisory overrides are part of the documented project. Exact fault/recovery thresholds, hysteresis bands, and dwell settings are not established by the currently
-                        available source record. They are a release-audit item here, not a claimed validated recovery mechanism.</p>
-                    <p
-                    class="code-reference" data-code="supervisor"><span>Code · mode and recovery decisions <small>link pending</small></span></p>
+                    <h2 id="recovery-title">Detection is not yet a recovery decision</h2>
+                    <p>Fault monitoring supplies health information. The supervisor uses it, together with estimation and mission conditions, to select behavior. This is the connection between FDIR and modes such as <code>DEGRADED_POINTING</code> or <code>SAFE_SUN</code>:
+                        a health problem can change what the spacecraft should attempt.</p>
+                    <p>Hysteresis uses different evidence for declaring a problem and accepting recovery. Persistence prevents one good or bad sample from repeatedly switching the state.</p>
+                    <p>There is also a practical difficulty after declaring a motor failed. In <code>motor_direct</code>, its commands are suppressed. This protects the command path, but it can remove the excitation needed to assess the motor again. If the
+                        simulated fault disappears, recovery still needs suitable new evidence or a deliberate reassessment mechanism.</p>
+                    <p class="code-reference" data-code="supervisor">Code · health-informed operating modes</p>
+                    <p class="code-reference" data-code="control">Code · motor-command handling</p>
                 </div>
             </section>
             <section class="note-section" id="redundancy" aria-labelledby="redundancy-title">
-                <div class="note-margin"><span class="section-number">04</span><span>CONTROL AUTHORITY</span></div>
+                <div class="note-margin">
+                    <span class="section-number">04</span><span>CONTROL AUTHORITY</span>
+                </div>
                 <div class="note-body">
-                    <h2 id="redundancy-title">Redundancy is a feasible-torque question</h2>
-                    <p>Four reaction wheels offer more actuator channels than the three body-torque dimensions. If the surviving three wheel axes remain linearly independent, a body-torque solution may still exist after one loss. That geometric fact does
-                        not guarantee enough torque, momentum capacity, or acceptable pointing performance.</p>
-                    <p>Motor limits and wheel-speed limits bound the reachable torque set. A remaining wheel near saturation can make an otherwise full-rank arrangement operationally inadequate. Magnetic torquers provide a separate momentum-management path,
-                        with authority constrained by the local magnetic-field direction.</p>
-                    <p>In current implementatiion an actor receives four estimated wheel-authority values along with tracking errors, wheel speeds, and previous actions. It can condition its commands on degraded authority instead of always acting as though every motor is healthy.
-                        An agent was deliberately traind to control with a randomly interrupted wheel to learn torque redistribution while one wheel suddenly lost.</p>
-                    <p>However, the policy highly depends on the quality of the health estimate and on the failures conditions represented during training. A classical fault-aware
-                        allocator is an essential comparator to ensure an overal agent fault tolerance.</p>
-                    <p class="code-reference" data-code="control"><span>Code · allocation and motor control <small>link pending</small></span></p>
+                    <h2 id="redundancy-title">Similar symptoms can have different causes</h2>
+                    <p>Separate motor and tachometer health states help organize the evidence. They do not make every fault uniquely identifiable. A useful question is: what else could produce this measurement?</p>
+                    <div class="table-scroll" role="region" aria-label="Observed symptom" tabindex="0">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Observed symptom</th>
+                                    <th scope="col">Possible explanations</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Wheel speed hardly changes after a command</th>
+                                    <td>Lost motor authority; a small or limited command; motor lag; a stale tachometer value.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Estimated authority drops</th>
+                                    <td>A real torque loss; noisy speed differences; model error; command and sample timing mismatch.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">No new wheel-speed data</th>
+                                    <td>Sensor or delivery failure; a timing problem; a missed sample. It does not by itself prove a motor failure.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Pointing becomes worse</th>
+                                    <td>Reduced wheel authority; a poor state estimate; saturation; a reference the remaining actuators cannot follow.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>The fourth wheel gives redundancy, but available control still depends on the remaining wheel geometry, torque limits and speeds. The useful outcome is continued control within the authority that remains, not simply a “healthy” label.</p>
                 </div>
             </section>
             <section class="note-section" id="validation" aria-labelledby="validation-title">

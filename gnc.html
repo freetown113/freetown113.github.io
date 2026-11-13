@@ -94,7 +94,12 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <th scope="row">Gyroscope / wheel tachometers</th>
+                                    <th scope="row">Gyroscope</th>
+                                    <td>20 Hz</td>
+                                    <td>20 ms</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Wheel tachometers</th>
                                     <td>20 Hz</td>
                                     <td>20 ms</td>
                                 </tr>
@@ -104,7 +109,12 @@
                                     <td>80 ms</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">Magnetometer / Sun sensor</th>
+                                    <th scope="row">Sun sensor</th>
+                                    <td>10 Hz</td>
+                                    <td>20 ms</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Magnetometer</th>
                                     <td>10 Hz</td>
                                     <td>20 ms</td>
                                 </tr>
@@ -129,6 +139,11 @@
                         </ul>
                         <li>Centralized fusion: regardless of whether the correction originates from stars, Sun, Earth magnetic field, the MEKF always converts the information into that same 3D error vector. The filter applies the Kalman gain, corrects the global quaternion via multiplication, removes the gyroscope bias, and restarts the process for the next cycle. It transform any vector or attitude measurement into a small 3D geometric correction</li>
                     </ul>
+                    <p>A single measured direction cannot determine the complete attitude at one instant. Imagine turning the spacecraft around the Sun direction: the measured Sun direction can stay the same while the spacecraft orientation changes. Other
+                        reference directions and propagation over time add information.</p>
+                    <p>Wheel-speed data follow a separate measurement path. They can be delayed, noisy or filtered, and can be carried in the same estimator output structure. But they are not attitude or gyro-bias states in this MEKF. The controller and
+                        wheel monitor need the delivered speed measurements directly.</p>
+                    <p>Orbital and geometric context supplies reference vectors for measurements and guidance. In this implementation, guidance uses the simulator’s orbit. The GNSS model does not turn this into a complete onboard orbit-determination system.</p>
                     <p class="code-reference" data-code="sensors"><span>Code · sensor delivery models <small>sensors</small></span></p>
                     <p class="code-reference" data-code="estimator"><span>Code · MEKF and delayed updates <small>estimator</small></span></p>
                 </div>
@@ -150,6 +165,10 @@
                                 </tr>
                             </thead>
                             <tbody>
+                                <tr>
+                                    <th scope="row">Pure PD</th>
+                                    <td>Attitude and rate errors → PD body torque → wheel allocation. No learned action.</td>
+                                </tr>
                                 <tr>
                                     <th scope="row">Residual PD</th>
                                     <td>Three corrections to PD body torque</td>

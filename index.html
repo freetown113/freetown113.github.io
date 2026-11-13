@@ -23,7 +23,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Research engineering project · space robotics</p>
         <h1 id="project-title">Learning to control<br>satellite's <em> attitude.</em></h1>
-        <p class="lead">Tetrahedral configured reaction wheels. Set of delayed sensors. Loss of signal/control. Motor limits. Giving all this an agent learns to control satellite's attitude to accomplish several different scenarios.</p>
+        <p class="lead">Tetrahedral configured reaction wheels. Set of delayed sensors. Loss of signal/control. Motor limits. RL agent learns to control satellite's attitude to accomplish various scenarios.</p>
         <p class="intro">This project is aimed to build a satellite attitude determination and control system (ADCS), connecting reinforcement learning with state estimation, fault handling, mission guidance, state supervison.</p>
         <a class="primary-link" href="technical.html">Explore the project <span aria-hidden="true">↗</span></a>
       </div>
@@ -44,19 +44,21 @@
     <dl class="spec-strip" aria-label="B3 controller configuration">
       <div><dt>Simulation rate</dt><dd>100 <span>Hz</span></dd></div>
       <div><dt>Application</dt><dd>5 <span>practical scenarios</span></dd></div>
-      <div><dt>Wheels saturation</dt><dd>MTQ <span>magnetic torque thruster</span></dd></div>
+      <div><dt>Moment unloading</dt><dd>MTQ <span>magnetic torque thruster</span></dd></div>
     </dl>
         </section>
     <dl class="spec-strip" aria-label="B3 controller configuration">
-      <div><dt>Sensors</dt><dd>5 <span>sensors with simulated degradation</span></dd></div>
-      <div><dt>RL agent</dt><dd>20k <span>parameters, fully connected NN</span></dd></div>
-      <div><dt>Orbit</dt><dd>LEO <span>500km above ocean level</span></dd></div>
+      <div><dt>Sensors</dt><dd>6 <span>types, with their own timing</span></dd></div>
+      <div><dt>RL agent</dt><dd>19.460 <span>parameters, fully connected NN</span></dd></div>
+      <div><dt>Orbit</dt><dd>LEO <span>500km circular low Earth orbit</span></dd></div>
     </dl>
     <section class="project-brief" aria-labelledby="question-title">
       <div><p class="eyebrow">The principal question</p><h2 id="question-title">Can a policy control<br>what it cannot directly observe?</h2></div>
-      <div class="brief-copy"><p>The policy receives estimated attitude and wheel health. Sensor timing, state estimation, and fault detection sit between the simulated spacecraft and the controller. What the simulator knows is different from what the controller gets to know.</p><p>In the ground-station scenario, the policy commands wheel motors while guidance provides a moving target and supervisory logic retains authority over operating modes.</p><a class="text-link" href="technical.html#control">Follow the control loop <span aria-hidden="true">↗</span></a><p class="next-links"><a href="scenarios.html">Pointing scenarios ↗</a><a href="results.html">Watch the results ↗</a></p></div>
+      <div class="brief-copy"><p>The simulator knows the true state and the faults it injects. The controller receives a different view: estimated attitude, delivered wheel-speed measurements and estimated wheel health. Learning to act from this incomplete information is an important part of the project.</p><p>The policy commands the wheel motors. Other modules decide where to point, estimate the state and respond to health problems. I explain these connections step by step in the articles.</p><a class="text-link" href="technical.html#control">Follow the control loop <span aria-hidden="true">↗</span></a><p class="next-links"><a href="scenarios.html">Pointing scenarios ↗</a><a href="results.html">Watch the results ↗</a><a href="technical.html#articles">Follow the chapters ↗</a></p></div>
     </section>
-    <section class="reading-paths" aria-labelledby="paths-title"><p class="eyebrow" id="paths-title">A closer look</p><a href="gnc.html"><span>GNC &amp; control</span><small>Sensors, estimation, classical and learned control</small><b aria-hidden="true">↗</b></a><a href="fdir.html"><span>Fault management</span><small>Detection, redundancy, and recovery decisions</small><b aria-hidden="true">↗</b></a><a href="learning.html"><span>Learning to control</span><small>From PD imitation to direct wheel commands</small><b aria-hidden="true">↗</b></a></section>
+    <section class="reading-paths" aria-labelledby="paths-title">
+      <p class="eyebrow" id="paths-title">A closer look</p>
+      <a href="gnc.html"><span>GNC &amp; control</span><small>Sensors, estimation, classical and learned control</small><b aria-hidden="true">↗</b></a><a href="fdir.html"><span>Fault management</span><small>Detection, redundancy, and recovery decisions</small><b aria-hidden="true">↗</b></a><a href="learning.html"><span>Learning to control</span><small>From PD imitation to direct wheel commands</small><b aria-hidden="true">↗</b></a><a href="technical.html#execution"><span>Quantization &amp; Rust</span><small>Taking the trained actor outside the training framework</small><b aria-hidden="true">↗</b></a></section>
     <section class="status-note" aria-labelledby="status-title">
       <p class="eyebrow" id="status-title">Where it stands</p>
       <p>A working simulation with estimation, fault-aware control, and ground-pass tracking. The next step is independent validation. Hardware transfer and an advantage over conventional control are still to be established.</p>

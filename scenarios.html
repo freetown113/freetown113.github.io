@@ -22,10 +22,10 @@
         <main id="main">
             <header class="note-header">
                 <p class="eyebrow">Missions description</p>
-                <h1>Missions:<br><em>ways to define a target</em></h1>
-                <p class="lead">The same attitude-control system faces different reference motions</p>
+                <h1>Different missions,<br><em>different references</em></h1>
+                <p class="lead">The controller follows a desired attitude and rate. Guidance has to build these references from the geometry of each task.</p>
             </header>
-            <p class="scope-line">Four reference-behavior sketches. Geometry and timing are illustrative. These are not trained-agent demonstration rollouts.</p>
+            <p class="scope-line">Four reference-behavior sketches. Geometry and timing are illustrative to provide better intuition of the mission.</p>
             <nav class="section-nav" aria-label="Scenarios"><a href="#sun_pointing">Sun pointing</a><a href="#ground_target">Ground-target tracking</a><a href="#scheduled_slew">Scheduled slews</a><a href="#nadir_lvlh">Nadir / LVLH</a></nav>
             <section id="sun_pointing" class="scenario-block" data-scenario="sun_pointing"
             aria-labelledby="sun_pointing-title">
@@ -33,8 +33,9 @@
                     <p class="eyebrow">01 / sun_pointing</p>
                     <h2 id="sun_pointing-title">Sun pointing</h2>
                     <p class="scenario-aim">Keep a selected body axis aligned with the Sun direction.</p>
-                    <p>This serves two purposes: <strong>normal Sun-tracking training scenario</strong> and <strong>SAFE_SUN supervisor target</strong>. NASA safe-mode designs commonly use coarse Sun-pointing to achieve a thermally safe, power-positive attitude. In the project, Sun measurements and a Sun-pointing reference also connect to supervisory safe-mode behavior.</p>
-                    <p>The reference is a direction in space rather than a point on Earth. This sketch shows acquisition followed by a hold, it leaves rotation about that direction unspecified. During eclipse, the supervisor must understand that Sun unavailable because geometry instead of diagnosing a dead Sun sensor.</p>
+                    <p>Sun pointing is both a training task and a reference used by the <code>SAFE_SUN</code> mode. It connects attitude control to the practical idea of orienting the spacecraft toward sunlight.</p>
+                    <p>The satellite points to Sun but one direction does not specify the rotation around that direction. Guidance needs an additional convention to complete a three-axis attitude reference.</p>
+                    <p>There is one particular situation: during eclipse, missing Sun information has a geometric explanation. The supervisor should distinguish that expected Sun absence from evidence of a sensor fault.</p>
                     <p class="code-reference" data-code="sunPointing"><span>Code · guidance for this scenario <small>link pending</small></span></p>
                 </div>
                 <figure class="scenario-figure">
@@ -56,19 +57,20 @@
                         <mo>=</mo>
                         <mfrac>
                             <mrow>
-                            <mi>R_target</mi>    
+                            <mi>R_target,I</mi>    
                             <mo>−</mo>
-                            <mi>R_sat</mi>
+                            <mi>R_sat,I</mi>
                             </mrow>
                             <mrow>
-                            <mi>||R_target</mi>
+                            <mi>||R_target,I</mi>
                             <mo>−</mo>
-                            <mi>R_sat||</mi>
+                            <mi>R_sat,I||</mi>
                             </mrow>
                         </mfrac>
                         </math>
                     </div>
-                    <p>The big difference from LVLH is that both attitude and angular rate vary substantially throughout the pass. Continuous references and mission phases connect changing geometry to wheel control. During training some episodes contain small or zero time when a target is in LOS. To facilitate initial phasese of training there is a special "pass_centered" in GroundPassResetMode that keeps only episodes when a ground target is in LOS.</p>
+                    <p>This unit vector points from the spacecraft toward the target. Guidance builds an attitude that aligns the chosen body axis with it. The reference changes throughout the pass.</p>
+                    <p>A pass-centered reset provides useful visible-pass experience for training. Persistent acquisition, tracking and standby phases then manage the mission. Dwell times and hysteresis help prevent small changes near a boundary from making the target chatter.</p>
                     <p class="code-reference" data-code="groundTarget"><span>Code · guidance for this scenario <small>link pending</small></span></p>
                 </div>
                 <figure class="scenario-figure">
@@ -83,8 +85,9 @@
                     <p class="eyebrow">03 / scheduled_slew</p>
                     <h2 id="scheduled_slew-title">Scheduled slews</h2>
                     <p class="scenario-aim">Move between a sequence of pointing references, with an accent at each one.</p>
-                    <p>This mission can be selfsufficient, but can also help a lot to elaborate a useful behavior when rather than suddenly jumping the guidance system produce a feasible slew trajectory with <strong>maximum angular velocity, maximum angular acceleration</strong>. The target trajectory can use a trapezoidal angular-rate profile: accelerate, constant-rate, decelerate, settle. The sketch demonstrates how this can looks like: a satelliete smoothly move its pointer from a target to another while fixing at each target for a while.</p>
-                    <p>This view makes the distinction between target selection, reference shaping, and controller response visible. A useful experiment would check settling before the next scheduled maneuver, along with actuator saturation.</p>
+                    <p>Instead of jumping directly to the next attitude, guidance shapes the transition, limits on reference angular rate and acceleration let the controller follow a planned maneuver.</p>
+                    <p>A continuous interpolation has no sudden jump in orientation, it can still move too quickly or demand more torque than the actuators can provide. Smooth geometry and a trackable maneuver are related, but separate, requirements.</p>
+                    <p>The sketch shows the intended sequence: hold, move, then settle. In an experiment I also check whether settling actually happens before the next maneuver and whether the wheels approach their limits.</p>
                     <p class="code-reference"
                     data-code="scheduledSlew"><span>Code · guidance for this scenario <small>link pending</small></span></p>
                 </div>
@@ -100,8 +103,9 @@
                     <p class="eyebrow">04 / nadir_lvlh</p>
                     <h2 id="nadir_lvlh-title">Nadir / LVLH</h2>
                     <p class="scenario-aim">Keep one axis directed toward Earth while following the local orbital frame.</p>
-                    <p>Nadir fixes an Earth-facing direction. The local vertical/local horizontal frame also determines the remaining orientation relative to the orbit; the second line indicates the along-track direction in this planar sketch.</p>
-                    <p>The project uses a nadir/LVLH fallback for ground-station guidance: while ground target is lost from LOS a mission manager changes mission to LVLH. Holding this reference in orbit requires a changing inertial attitude; it is not the same as holding one inertial quaternion.</p>
+                    <p>Nadir points toward Earth, the local vertical/local horizontal (LVLH) frame also defines orientation relative to the orbit, including an along-track direction.</p>
+                    <p>This reference rotates as the spacecraft moves around Earth, holding it is different from holding a fixed inertial attitude.</p>
+                    <p>The ground-pass mission can use a nadir/LVLH standby reference outside the tracking phase. Mission logic manages the transition instead of switching targets at every small visibility fluctuation.</p>
                     <p class="code-reference" data-code="nadirLvlh"><span>Code · guidance for this scenario <small>link pending</small></span></p>
                 </div>
                 <figure class="scenario-figure">
@@ -110,6 +114,22 @@
                         <button type="button" data-scene-motion class="motion-toggle" hidden aria-pressed="false">Pause sketch Ⅱ</button>
                     </figcaption>
                 </figure>
+            </section>
+            <section class="note-section" id="orbit" aria-labelledby="orbit-title">
+                <div class="note-margin">
+                    <span class="section-number">↳</span><span>ORBIT / FRAMES</span>
+                </div>
+                <div class="note-body">
+                    <h2 id="orbit-title">Where the geometry comes from</h2>
+                    <p>The current example uses an analytical circular orbit at 500 km altitude and 10° inclination. Position and velocity evolve from the configured orbital phase and orientation. The environment also supplies Earth rotation, a simplified magnetic
+                        field and a Sun direction.</p>
+                    <p>The <strong>inertial frame</strong> is the common reference for orbital positions and directions. The <strong>body frame</strong> rotates with the spacecraft. The estimated attitude provides the rotation between them, so an inertial
+                        target direction can be expressed in body coordinates for control, while the spacecraft orientation that is estimated</p>
+                    <p>These tasks need their own geometry: a ground target depends on relative position, LVLH on orbital position and velocity, and Sun pointing on the Sun direction. The simulator supplies this context to guidance, calculating it
+                        by a complete onboard navigation filter is outside of the scope of the project.</p>
+                    <p class="code-reference" data-code="orbit">Code · orbit and geometric context</p>
+                    <p class="code-reference" data-code="mission">Code · persistent mission phases</p>
+                </div>
             </section>
             <p class="article-end"><a href="results.html">See the experiment evidence ↗</a><a href="gnc.html">How guidance connects to control ↗</a></p>
         </main>

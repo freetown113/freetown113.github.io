@@ -21,8 +21,8 @@
         <main id="main" class="technical">
             <header class="note-header">
                 <p class="eyebrow">AUTONOMY / ML perspective</p>
-                <h1>Train RL agent: <em>direct motors control</em></h1>
-                <p class="lead">This section describes satellite's environment, RL algorithm details, training strategy: imitation learning, curriculum learning.</p>
+                <h1>Training an agent<br><em>to control the motors</em>
+                <p class="lead">The interesting part for me is how reinforcement learning fits this spacecraft: what the agent receives, what it can change, and how I make the task learnable.</p>
             </header>
             <nav class="topic-nav" aria-label="Technical perspectives"><a href="technical.html">Project &amp; evolution</a><a href="gnc.html">GNC &amp; control</a><a href="fdir.html">Fault management</a><a href="learning.html" aria-current="page">RL training</a></nav>
             <section class="note-section" id="task" aria-labelledby="task-title">
@@ -33,7 +33,7 @@
                         An RL agent learns to turn that information into motor commands.</p>
                     <p>The simulator is implemented in phases, each time another abstraction is added: base satellite physics; envoronment vectorization; wheels faulure modes; sensors measurements replace ground truth from physics; signal/device degradation
                         or complete loss; supervisor modes; mission scenarios; orbital configuration. The physics at 100 Hz, sensors measurements at range from 80 to 100Hz, executes control at 20 Hz, with 512 parallel environments configured for training
-                        and evaluation. This describes batching, not a measured throughput result.</p>
+                        and evaluation.</p>
                     <p>Partial observability is deliberate: delayed measurements, estimated gyro bias, and inferred actuator authority replace direct access to the simulator’s state. The current agent is feedforward. Previous actions and explicit estimates
                         provide context; there is no recurrent memory in the published network shape.</p>
                     <div class="table-wrap">
@@ -82,10 +82,15 @@
                                     <td>6</td>
                                     <td>One hot supervisory state</td>
                                 </tr>
+                                <tr>
+                                    <th scope="row">Current implementation</th>
+                                    <td>18</td>
+                                    <td>Attitude-error+Tracking-rate error+Wheel tachometers+Previous normalized actions+Estimated wheel authority</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
-                    <p>The four outputs are normalized wheel-motor commands. Actuator conditioning converts them into bounded commands. Current control limit is 0.03 N·m. Mode and diagnostic-confidence features are not enabled in this observation configuration.</p>
+                    <p>The reward combines pointing and rate behavior with costs related to control effort and operating limits. These terms shape training. The deployed actor needs only its observation and learned parameters.</p>
                     <p
                     class="code-reference" data-code="environment"><span>Code · observations, actions and environment <small>link pending</small></span></p>
                 </div>
@@ -94,8 +99,8 @@
                 <div class="note-margin"><span class="section-number">02</span><span>TRAINING HISTORY</span></div>
                 <div class="note-body">
                     <h2 id="teacher-title">Imitation learning: PD controller as a teacher</h2>
-                    <p>Along the training process it was gradually shifted what the algorithm was responsible for controlling. Fundamentally changing the action space of the neural network across three distinct phases. The early sequence began with <strong>residual PD</strong>: learn a small correction above PD controller. It then moved to direct body-torque, where an agent had to calculate the total rotational force needed along the three physical axes of the satellite's body. Ultimately direct wheel-motor control, where an agent directly commanding the individual voltages/currents of the four physical reaction wheel motors. These are changes in action space and responsibility.</p>
-                    <p>A useful practical step was supervised initialization from the PD teacher. RL algorithms training from scratch struggles at the very beginning because an untrained NN takes completely random actions, leading to crashes and slow learning.An imitation learning helps to bypass this problem. Data were collected from trajectories of untrained, partly trained, and trained residual policies, then paired with teacher actions. The policy mean was passed through tanh and fitted using mean-squared error to those actions. This gave the Actor-Critic network a solid baseline behavior. It guaranteed that an agent started its training already knowing how to stabilize the satellite decently well, ensuring it explored useful states rather than flailing randomly.</p>
+                    <p>During the training process, I gradually changed what the algorithm was responsible for controlling, fundamentally changing the neural network’s action space across three distinct phases. The first phase used residual PD control, where the agent learned a small correction on top of the PD controller. It then moved to direct body-torque control, where the agent had to determine the total torque required around the three axes of the satellite body. Finally, I moved to direct wheel-motor control, where the agent directly commands the individual control inputs of the four reaction-wheel motors. Each transition changes both the action space and the level of responsibility given to the agent.</p>
+                    <p>A useful practical step was supervised initialization using the PD controller as a teacher. Training an RL policy entirely from scratch is difficult at the beginning because an untrained neural network produces essentially random actions, which can lead to unstable behavior and slow learning. Imitation learning helps to bypass this initial problem. I collected trajectories from untrained, partially trained, and trained residual policies and paired their observations with actions produced by the teacher. The policy mean was passed through tanh and trained using mean-squared error against the teacher actions.</p>
                     <div class="equation" aria-label="Imitation loss is mean squared difference between the bounded policy output and teacher action">
                     <math display="block">
                         <mi>L_imitation</mi>
@@ -109,8 +114,8 @@
                         </mfrac>
                         </math>
                     </div>
-                    <p>That initialized the actor–critic network before further RL experiments in direct control. The benefit is a useful initial behavior and state coverage. It is not a guarantee that imitation transfers across action spaces. A three-component
-                        torque teacher cannot blindly copy a 3-component output from a teacher into a 4-component motor output head without explicitly designing a mathematical mapping matrix to translate those targets. Imitation learning gives a great head start, but it does not automatically bridge the structural gap when the action space changed.</p>
+                    <p>This gave the actor–critic network a useful baseline behavior before reinforcement learning started. Instead of beginning with completely random control, the agent already had a reasonable ability to stabilize the satellite and could explore useful states rather than spending most of its early training on unstable trajectories.</p>
+                    <p>This procedure initialized the actor–critic network before further RL experiments with direct control. Its main benefit was providing useful initial behavior and better state-space coverage. However, imitation learning does not guarantee that learned behavior can be transferred directly between different action spaces. For example, a three-component body-torque output cannot simply be copied into a four-component reaction-wheel output. An explicit mapping between body torque and individual wheel commands is required. Imitation learning can provide a strong starting point, but it does not automatically bridge the structural difference when the action space changes.</p>
                     <p class="code-reference" data-code="imitation"><span>Code · teacher data and supervised initialization <small>link pending</small></span></p>
                 </div>
             </section>
@@ -118,9 +123,9 @@
                 <div class="note-margin"><span class="section-number">03</span><span>OPTIMIZATION</span></div>
                 <div class="note-body">
                     <h2 id="ppo-title">Algorithm details</h2>
-                    <p>An agent trainde as a proximal policy optimization PPO algorithm. PPO uses collected rollouts and a clipped policy objective to limit the huge updates/steps in parameter space, because the critic should be updated with the same or very close (that is defined by proximity bounds) policy that the actor collected rollouts. The actor provides mean valuse for actions giving observations, to ensure exploration output actions are sampled from normal distribution parametrized by actors output. A separate critic estimates value for advantage estimation. This is an optimization mechanism, that is responsible for NN parameters update.</p>
+                    <p>The agent was trained using Proximal Policy Optimization (PPO). PPO uses collected rollouts together with a clipped policy objective to prevent excessively large policy updates. The new policy is optimized relative to the policy that generated the rollouts, while the clipping mechanism limits how far the update can move from that behavior. Given an observation, the actor produces the mean values of the action distribution. During training, actions are sampled from a normal distribution parameterized by the actor output, providing the exploration required for learning. A separate critic estimates the value function, which is used to calculate advantage estimates. Together, these components provide the optimization mechanism used to update the neural-network parameters.</p>
                     <div class="network-line" aria-label="Actor: 18 inputs, two hidden layers of 128 tanh units, four outputs"><span>25<small>inputs</small></span><b aria-hidden="true">→</b><span>128 × 128<small>tanh hidden layers</small></span><b aria-hidden="true">→</b><span>4<small>motor commands</small></span></div>
-                    <p>An actor and a critic are separated, each contains 20,356 parameters. Keeping these counts separate matters when estimating inference cost. The supplied configuration uses a fixed policy log standard deviation of −1.5.</p>
+                    <p>The actor and critic are separate networks, each containing 20,356 parameters. Keeping these parameter counts separate is important when estimating inference cost, since only the actor is required for policy inference. The current configuration uses a fixed policy log standard deviation of −1.5.</p>
                     <dl
                     class="compact-facts">
                         <div><dt>Learning rate</dt>
@@ -136,8 +141,8 @@
                             <dd>8 per update epoch</dd>
                         </div>
                         </dl>
-                        <p>The configured success condition combines pointing error below 1°, rate error below 0.01 rad/s, and a 1-second dwell. This is an evaluation condition, not a reconstruction of the reward.</p>
-                        <p>The reward is a complex function that consists of: attitude_error, attitude_error_progress, rate, action_smoothness, wheel speed, target_success and other components.  </p>
+                        <p>The configured success condition combines an attitude error below 1°, a rate error below 0.01 rad/s, and a 1-second dwell time. This is an evaluation criterion rather than a direct reconstruction of the reward function.</p>
+                        <p>The reward itself is a more complex function composed of several terms, including attitude_error, attitude_error_progress, rate, action_smoothness, wheel_speed, target_success, and other components.</p>
                         <p class="source-note">Algorithm background: <a href="https://arxiv.org/abs/1707.06347">Schulman et al., Proximal Policy Optimization Algorithms</a>.</p>
                         <p class="code-reference" data-code="training"><span>Code · PPO update <small>link pending</small></span></p>
                         <p class="code-reference" data-code="network"><span>Code · actor–critic network <small>link pending</small></span></p>
@@ -146,20 +151,24 @@
             <section class="note-section" id="curriculum" aria-labelledby="curriculum-title">
                 <div class="note-margin"><span class="section-number">04</span><span>CURRICULUM / SCENARIOS</span></div>
                 <div class="note-body">
-                    <h2 id="curriculum-title">Curriculum learning: increase difficulty gradually</h2>
-                    <p>Even if imitation learning is helpful, while moving beyond simple motor control in hold position scenario it's not trivial for an agent to learn a complex follow a moving target (while influenced by external disturbances) from scratch. A curriculum learning turns out to be an effective tool right for this job. Training commences from a simple(intermediate) target and complexity adjusted by axis. Training development progressed from easier fixed-angle alignment task to wider initial-attitude distributions. Nonzero initial angular rates, random wheel interruptions can be admix in different proportions. Finally following a moving ground-station reference can be achieved through a number of small intermidiate tasks. Changing one source of difficulty at a time also helps distinguish an exploration problem from a broken estimator or a control-authority limit.</p>
-                    <p>Sensor timing, motor nonidealities, and stochastic faults make the environment more demanding. Realism and domain randomization are different: modeling a disturbance does not establish that its parameters were randomized. The exact distribution of each randomized quantity belongs in the experiment record.</p>
-                    <p class="code-reference" data-code="curriculum"><span>Code · reset distributions and scenarios <small>link pending</small></span></p>
+                    <h2 id="curriculum-title">Increase the difficulty in steps</h2>
+                    <p>I do not ask the agent to solve every difficult condition from its first rollout. A curriculum changes the reset distribution and task conditions as training progresses: larger initial attitude errors, more demanding motion, imperfect
+                        measurements and faults.</p>
+                    <p>A <strong>cone </strong> is a special reset mode, where the initial orientation is sampled within a configured angular bound around a reference orientation. The only restriction on the initial attitude error that the angle can vary inside that bound.</p>
+                    <p>Moving targets add another difficulty. For ground tracking, a pass-centered reset gives the agent useful visible pass experience, that does not guarantee that the target remains visible for the whole episode. Mission phases must still manage acquisition,
+                        tracking and leaving the pass.</p>
+                    <p>As more estimation and fault logic enter the loop, an episode takes more computation, and learning can also require more episodes. Faster simulation and an easier curriculum solve different parts of this problem.</p>
+                    <p class="code-reference" data-code="training">Code · curriculum and training configuration</p>
                 </div>
             </section>
             <section class="note-section" id="evaluation" aria-labelledby="evaluation-title">
                 <div class="note-margin"><span class="section-number">05</span><span>GENERALIZATION</span></div>
                 <div class="note-body">
-                    <h2 id="evaluation-title">A universal optimal policy</h2>
-                    <p>The aim is a compact policy that adapts motor use to the state it receives at any scenario.  Better robustness, efficiency, and transfer remain hypotheses to test. Quantization and target-processor timing are later deployment experiments are going to be implemented.</p>
-                    <p></p>
-                    <p></p>
-                    <p class="code-reference" data-code="evaluation"><span>Code · held-out evaluation <small>link pending</small></span></p>
+                    <h2 id="evaluation-title">Look beyond one successful episode</h2>
+                    <p>I check pointing, rate error, settling, wheel speeds and command behavior. With faults, I also look at what the monitor estimated and how the supervisor reacted. A short moment inside the tolerance is different from keeping the target
+                        there. The aim of the project is to obtain a compact policy that adapts to varios conditions proposed in scenarios.</p>
+                    <p><a href="results.html">Recordings and numerical results ↗</a></p>
+                    <p class="code-reference" data-code="evaluation">Code · evaluation and recording</p>
                 </div>
             </section>
             <div class="article-end"><a href="technical.html#evolution">Place this work in the project’s evolution ↗</a><a data-release hidden>Published code snapshot ↗</a></div>

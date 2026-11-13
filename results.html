@@ -26,11 +26,11 @@
             </header>
             <section class="result-feature" aria-labelledby="recording-title">
                 <p class="eyebrow">01 / Recorded experiment</p>
-                <h2 id="recording-title">Ground-station tracking</h2>
+                <h2 id="recording-title">Ground station tracking</h2>
                 <div class="media-empty" data-demo-empty1><span class="eyebrow">Recording slot</span>
                     <p>The recording will appear here when attached.</p><small>Checkpoint 9,250 · no replacement animation is presented as experimental evidence.</small></div>
                 <div class="recording" data-demo1 hidden>
-                    <video controls playsinline preload="metadata" data-video1 aria-label="Ground-station tracking recording"></video>
+                    <video controls playsinline preload="metadata" data-video1 aria-label="Ground station tracking recording"></video>
                     <p class="caption" data-demo-caption1></p>
                 </div>
                 <dl class="result-facts">
@@ -44,7 +44,7 @@
                         <dd>One run <span>aggregate success rate pending</span></dd>
                     </div>
                 </dl>
-                <p class="result-reading">This recording demonstrates a running control loop. The terminal pointing error is above the configured angle threshold; it does not establish success across full passes, different seeds, or fault schedules.</p>
+                <p class="result-reading">This recording demonstrates a running control loop, the terminal pointing error is above the configured angle threshold.</p>
             </section>
             <section class="result-feature" aria-labelledby="recording-title">
                 <p class="eyebrow">02 / Recorded experiment</p>
@@ -95,6 +95,105 @@
                     <figcaption data-result-caption></figcaption>
                 </figure>
             </section> -->
+            <section class="result-feature" id="quantization" aria-labelledby="quantization-title">
+                <p class="eyebrow">03 · quantization and ebedded</p>
+                <h2 id="quantization-title">Does the smaller actor keep useful control?</h2>
+                <p class="result-reading">I compare one FP32 actor with its W8A8HI Rust version in 2560 paired ground target episodes. Each pair starts from matched conditions and runs for 90 simulated seconds at 20 Hz. The two controllers then develop their own trajectories.</p>
+                <p class="source-note">The wheel test removes torque from one randomly selected wheel at 20 s. The tracker challenge starts without tracker lock and uses a 10% packet loss setting.</p>
+                <div class="table-scroll" role="region" aria-label="Mean tracking duty during 30–90 s" tabindex="0">
+                    <table>
+                        <caption>Mean tracking duty during 30–90 s</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Condition</th>
+                                <th scope="col">FP32 tracking duty</th>
+                                <th scope="col">Rust tracking duty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row">Ground tracking</th>
+                                <td>79.16%</td>
+                                <td>78.98%</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Ground tracking wheel failure</th>
+                                <td>6.27%</td>
+                                <td>7.12%</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Ground tracking</th>
+                                <td>84.26%</td>
+                                <td>84.22%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="source-note">Tracking duty is the fraction of samples with angle ≤ 1°, reported rate norm ≤ 0.01 rad/s and a valid reference.</p>
+                <p class="result-reading">All results remain close after quantization. The wheel failure case is more demanding: both versions have low tracking duty after the fault, even though many episodes settled earlier. This points to a shared control difficulty
+                    rather than a large overall change caused by Rust inference.</p>
+                <h3>Check the arithmetic separately</h3>
+                <p class="result-reading">Before comparing trajectories, I feed identical observations to the implementations. This separates the effect of quantization from a disagreement between Numpy and Rust.</p>
+                <div class="table-scroll" role="region" aria-label="Nominal pool: 2,764,800 observations" tabindex="0">
+                    <table>
+                        <caption> 2_764_800 observations</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Same input comparison</th>
+                                <th scope="col">Mean maximum action error</th>
+                                <th scope="col">Largest action error</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row">Numpy W8A8HI vs FP32</th>
+                                <td>0.012443</td>
+                                <td>0.061323</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Rust W8A8HI vs Numpy W8A8HI</th>
+                                <td>0.00000106</td>
+                                <td>0.014353</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="source-note">Errors use normalized action units. For each observation, take the largest difference across its four outputs, then summarize those values. Across all five runs, Rust vs. Numpy differences exceeded 10<sup>−4</sup> threshold on 1848 of 4_608_000 observations
+                    (0.0401%). Most outputs agree closely, with occasional larger differences.</p>
+                <h3>A smaller model file, a small workload</h3>
+                <div class="table-scroll" role="region" aria-label="18 → 128 → 128 → 4 actor" tabindex="0">
+                    <table>
+                        <caption>18 → 128 → 128 → 4 actor</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Actor format</th>
+                                <th scope="col">Calculated serialized size</th>
+                                <th scope="col">Reduction from FP32</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row">FP32</th>
+                                <td>77896 bytes</td>
+                                <td>—</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">W8A32</th>
+                                <td>21336 bytes</td>
+                                <td>72.61%</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">W8A8HI</th>
+                                <td>21344 bytes</td>
+                                <td>72.60%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="result-reading">The actor has 19200 weights and 260 biases. Its linear layers require 19200 MACs per inference: 0.384 MMAC/s at 20 Hz, plus bias additions and nonlinearities.</p>
+                <p class="result-reading">In the three nominal host runs, the median Python to Rust request took about 81 μs and the 99th percentile about 119–120 μs. Occasional maxima reached 103–109 ms. This timing includes JSON communication and scheduling, the simulator waited
+                    for each reply.</p>
+            </section>
             <p class="article-end"><a href="technical.html#evidence">Evidence limits and next experiments ↗</a><a href="learning.html#evaluation">Evaluation design ↗</a></p>
         </main>
         <footer><span data-author>Research engineering project · space robotics</span>
